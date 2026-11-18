@@ -1,7 +1,7 @@
 # ligaBackend
 
-Go API для лиги Mr. Pushkin (D-017). Этап 3: серверная авторизация, cookie-сессии,
-подтверждение email, заявки организатора.
+Go API для лиги Mr. Pushkin (D-017). Этап 4: турниры и заявки (вместимость/waitlist),
+плюс auth этапа 3 (cookie-сессии, approve/reject).
 
 ## Стек
 
@@ -38,6 +38,17 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | GET | `/api/organizer/applications` | Список заявок (organizer+) |
 | POST | `/api/organizer/applications/{id}/approve` | Approve + правка ФИО/уровня |
 | POST | `/api/organizer/applications/{id}/reject` | Reject |
+| GET | `/api/tournaments` | Публичный список (без draft) |
+| GET | `/api/tournaments/{slug}` | Карточка + заявки |
+| POST | `/api/tournaments/{slug}/registrations` | Заявка (approved) |
+| DELETE | `/api/tournaments/{slug}/registrations/me` | Отмена своей заявки |
+| GET | `/api/organizer/tournaments` | Все турниры (organizer+) |
+| POST | `/api/organizer/tournaments` | Создать турнир + rule v1 |
+| GET | `/api/organizer/tournaments/{id}` | Карточка организатора |
+| PATCH | `/api/organizer/tournaments/{id}` | Редактировать / сменить статус |
+
+Вместимость: `SELECT … FOR UPDATE` на турнир в одной транзакции; overflow → waitlist;
+отмена confirmed/pending продвигает очередь.
 
 Сессия: 32 random bytes в cookie `mpl_session` (prod: `__Host-mpl_session`),
 HttpOnly + SameSite=Lax + Secure(prod); в БД только SHA-256(token).
@@ -104,7 +115,8 @@ cmd/seed/          CLI seed approved organizer
 internal/auth/     сессии, rate limit, уровни
 internal/config/   env
 internal/crypto/   random, SHA-256 токенов, Argon2id, AES-GCM
-internal/http/     router, auth, organizer
+internal/http/     router, auth, organizer, tournaments
+internal/tournaments  slug + registration capacity
 internal/mail/     email_outbox enqueue
 internal/db/       pgx pool + sqlc
 migrations/        goose

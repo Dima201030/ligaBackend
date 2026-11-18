@@ -62,12 +62,21 @@ func NewWithOptions(opts Options) *Server {
 		r.With(s.requireAuth).Get("/me", s.handleMe)
 	})
 
+	s.router.Get("/api/tournaments", s.handleListPublicTournaments)
+	s.router.Get("/api/tournaments/{slug}", s.handleGetPublicTournament)
+	s.router.With(s.requireAuth, s.requireApproved).Post("/api/tournaments/{slug}/registrations", s.handleCreateRegistration)
+	s.router.With(s.requireAuth, s.requireApproved).Delete("/api/tournaments/{slug}/registrations/me", s.handleCancelRegistration)
+
 	s.router.Route("/api/organizer", func(r chi.Router) {
 		r.Use(s.requireAuth)
 		r.Use(s.requireOrganizer)
 		r.Get("/applications", s.handleListApplications)
 		r.Post("/applications/{id}/approve", s.handleApproveApplication)
 		r.Post("/applications/{id}/reject", s.handleRejectApplication)
+		r.Get("/tournaments", s.handleListOrganizerTournaments)
+		r.Post("/tournaments", s.handleCreateTournament)
+		r.Get("/tournaments/{id}", s.handleGetOrganizerTournament)
+		r.Patch("/tournaments/{id}", s.handleUpdateTournament)
 	})
 
 	return s

@@ -56,6 +56,233 @@ func (ns NullEmailOutboxStatus) Value() (driver.Value, error) {
 	return string(ns.EmailOutboxStatus), nil
 }
 
+type RegistrationStatus string
+
+const (
+	RegistrationStatusPending   RegistrationStatus = "pending"
+	RegistrationStatusConfirmed RegistrationStatus = "confirmed"
+	RegistrationStatusWaitlist  RegistrationStatus = "waitlist"
+	RegistrationStatusCancelled RegistrationStatus = "cancelled"
+	RegistrationStatusRejected  RegistrationStatus = "rejected"
+)
+
+func (e *RegistrationStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = RegistrationStatus(s)
+	case string:
+		*e = RegistrationStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for RegistrationStatus: %T", src)
+	}
+	return nil
+}
+
+type NullRegistrationStatus struct {
+	RegistrationStatus RegistrationStatus
+	Valid              bool // Valid is true if RegistrationStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullRegistrationStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.RegistrationStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.RegistrationStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullRegistrationStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.RegistrationStatus), nil
+}
+
+type SurfaceType string
+
+const (
+	SurfaceTypeHard   SurfaceType = "hard"
+	SurfaceTypeClay   SurfaceType = "clay"
+	SurfaceTypeGrass  SurfaceType = "grass"
+	SurfaceTypeCarpet SurfaceType = "carpet"
+)
+
+func (e *SurfaceType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = SurfaceType(s)
+	case string:
+		*e = SurfaceType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for SurfaceType: %T", src)
+	}
+	return nil
+}
+
+type NullSurfaceType struct {
+	SurfaceType SurfaceType
+	Valid       bool // Valid is true if SurfaceType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullSurfaceType) Scan(value interface{}) error {
+	if value == nil {
+		ns.SurfaceType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.SurfaceType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullSurfaceType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.SurfaceType), nil
+}
+
+type TournamentFormat string
+
+const (
+	TournamentFormatOlympic           TournamentFormat = "olympic"
+	TournamentFormatRoundRobin        TournamentFormat = "round_robin"
+	TournamentFormatGroupsPlayoff     TournamentFormat = "groups_playoff"
+	TournamentFormatDoubleElimination TournamentFormat = "double_elimination"
+)
+
+func (e *TournamentFormat) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = TournamentFormat(s)
+	case string:
+		*e = TournamentFormat(s)
+	default:
+		return fmt.Errorf("unsupported scan type for TournamentFormat: %T", src)
+	}
+	return nil
+}
+
+type NullTournamentFormat struct {
+	TournamentFormat TournamentFormat
+	Valid            bool // Valid is true if TournamentFormat is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullTournamentFormat) Scan(value interface{}) error {
+	if value == nil {
+		ns.TournamentFormat, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.TournamentFormat.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullTournamentFormat) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.TournamentFormat), nil
+}
+
+type TournamentStatus string
+
+const (
+	TournamentStatusDraft              TournamentStatus = "draft"
+	TournamentStatusRegistrationSoon   TournamentStatus = "registration_soon"
+	TournamentStatusRegistrationOpen   TournamentStatus = "registration_open"
+	TournamentStatusRegistrationClosed TournamentStatus = "registration_closed"
+	TournamentStatusScheduled          TournamentStatus = "scheduled"
+	TournamentStatusLive               TournamentStatus = "live"
+	TournamentStatusCompleted          TournamentStatus = "completed"
+	TournamentStatusCancelled          TournamentStatus = "cancelled"
+)
+
+func (e *TournamentStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = TournamentStatus(s)
+	case string:
+		*e = TournamentStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for TournamentStatus: %T", src)
+	}
+	return nil
+}
+
+type NullTournamentStatus struct {
+	TournamentStatus TournamentStatus
+	Valid            bool // Valid is true if TournamentStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullTournamentStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.TournamentStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.TournamentStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullTournamentStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.TournamentStatus), nil
+}
+
+type TournamentType string
+
+const (
+	TournamentTypeSingles TournamentType = "singles"
+	TournamentTypeDoubles TournamentType = "doubles"
+	TournamentTypeMixed   TournamentType = "mixed"
+	TournamentTypeFinal   TournamentType = "final"
+	TournamentTypeCup     TournamentType = "cup"
+	TournamentTypeTeams   TournamentType = "teams"
+)
+
+func (e *TournamentType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = TournamentType(s)
+	case string:
+		*e = TournamentType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for TournamentType: %T", src)
+	}
+	return nil
+}
+
+type NullTournamentType struct {
+	TournamentType TournamentType
+	Valid          bool // Valid is true if TournamentType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullTournamentType) Scan(value interface{}) error {
+	if value == nil {
+		ns.TournamentType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.TournamentType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullTournamentType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.TournamentType), nil
+}
+
 type UserRole string
 
 const (
@@ -219,6 +446,20 @@ type Profile struct {
 	UpdatedAt pgtype.Timestamptz
 }
 
+type Registration struct {
+	ID                pgtype.UUID
+	TournamentID      pgtype.UUID
+	PlayerID          pgtype.UUID
+	PartnerID         pgtype.UUID
+	LookingForPartner bool
+	Status            RegistrationStatus
+	Seed              pgtype.Int4
+	WaitlistPosition  pgtype.Int4
+	CreatedAt         pgtype.Timestamptz
+	ConfirmedAt       pgtype.Timestamptz
+	CancelledAt       pgtype.Timestamptz
+}
+
 type Session struct {
 	ID            pgtype.UUID
 	UserID        pgtype.UUID
@@ -230,6 +471,43 @@ type Session struct {
 	LastSeenAt    pgtype.Timestamptz
 	Ip            *netip.Addr
 	UserAgent     pgtype.Text
+}
+
+type Tournament struct {
+	ID                   pgtype.UUID
+	Slug                 string
+	Title                string
+	Description          string
+	Type                 TournamentType
+	Category             string
+	Surface              SurfaceType
+	Format               TournamentFormat
+	Status               TournamentStatus
+	StartsAt             pgtype.Timestamptz
+	EndsAt               pgtype.Timestamptz
+	RegistrationOpensAt  pgtype.Timestamptz
+	RegistrationClosesAt pgtype.Timestamptz
+	VenueName            string
+	VenueAddress         string
+	VenueCourts          int32
+	VenueSurface         SurfaceType
+	EntryFee             int32
+	MaxParticipants      int32
+	CoverUrl             pgtype.Text
+	Season               int32
+	CreatedBy            pgtype.UUID
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+}
+
+type TournamentRuleVersion struct {
+	ID           pgtype.UUID
+	TournamentID pgtype.UUID
+	Version      int32
+	Rules        []byte
+	TextMarkdown string
+	CreatedBy    pgtype.UUID
+	CreatedAt    pgtype.Timestamptz
 }
 
 type User struct {
