@@ -12,6 +12,50 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type EmailOutboxStatus string
+
+const (
+	EmailOutboxStatusPending   EmailOutboxStatus = "pending"
+	EmailOutboxStatusSent      EmailOutboxStatus = "sent"
+	EmailOutboxStatusFailed    EmailOutboxStatus = "failed"
+	EmailOutboxStatusCancelled EmailOutboxStatus = "cancelled"
+)
+
+func (e *EmailOutboxStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = EmailOutboxStatus(s)
+	case string:
+		*e = EmailOutboxStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for EmailOutboxStatus: %T", src)
+	}
+	return nil
+}
+
+type NullEmailOutboxStatus struct {
+	EmailOutboxStatus EmailOutboxStatus
+	Valid             bool // Valid is true if EmailOutboxStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullEmailOutboxStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.EmailOutboxStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.EmailOutboxStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullEmailOutboxStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.EmailOutboxStatus), nil
+}
+
 type UserRole string
 
 const (
@@ -99,6 +143,82 @@ func (ns NullUserStatus) Value() (driver.Value, error) {
 	return string(ns.UserStatus), nil
 }
 
+type VerificationKind string
+
+const (
+	VerificationKindEmail  VerificationKind = "email"
+	VerificationKindReset  VerificationKind = "reset"
+	VerificationKindInvite VerificationKind = "invite"
+)
+
+func (e *VerificationKind) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = VerificationKind(s)
+	case string:
+		*e = VerificationKind(s)
+	default:
+		return fmt.Errorf("unsupported scan type for VerificationKind: %T", src)
+	}
+	return nil
+}
+
+type NullVerificationKind struct {
+	VerificationKind VerificationKind
+	Valid            bool // Valid is true if VerificationKind is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullVerificationKind) Scan(value interface{}) error {
+	if value == nil {
+		ns.VerificationKind, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.VerificationKind.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullVerificationKind) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.VerificationKind), nil
+}
+
+type AuditLog struct {
+	ID        int64
+	ActorID   pgtype.UUID
+	Action    string
+	Entity    string
+	EntityID  pgtype.Text
+	Diff      []byte
+	Ip        *netip.Addr
+	UserAgent pgtype.Text
+	CreatedAt pgtype.Timestamptz
+}
+
+type EmailOutbox struct {
+	ID            pgtype.UUID
+	To            string
+	Template      string
+	Payload       []byte
+	Status        EmailOutboxStatus
+	Attempts      int32
+	NextAttemptAt pgtype.Timestamptz
+	SentAt        pgtype.Timestamptz
+	Error         pgtype.Text
+	CreatedAt     pgtype.Timestamptz
+}
+
+type Profile struct {
+	UserID    pgtype.UUID
+	Phone     pgtype.Text
+	Level     string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
 type Session struct {
 	ID            pgtype.UUID
 	UserID        pgtype.UUID
@@ -123,4 +243,14 @@ type User struct {
 	EmailVerifiedAt pgtype.Timestamptz
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
+}
+
+type VerificationToken struct {
+	ID        pgtype.UUID
+	UserID    pgtype.UUID
+	Kind      VerificationKind
+	TokenHash []byte
+	ExpiresAt pgtype.Timestamptz
+	UsedAt    pgtype.Timestamptz
+	CreatedAt pgtype.Timestamptz
 }

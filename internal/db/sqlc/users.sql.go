@@ -11,6 +11,129 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const approveUser = `-- name: ApproveUser :one
+UPDATE users
+SET first_name = $2,
+    last_name = $3,
+    status = 'approved',
+    updated_at = now()
+WHERE id = $1 AND status = 'pending'
+RETURNING id, email, password_hash, first_name, last_name, role, status,
+          email_verified_at, created_at, updated_at
+`
+
+type ApproveUserParams struct {
+	ID        pgtype.UUID
+	FirstName string
+	LastName  string
+}
+
+func (q *Queries) ApproveUser(ctx context.Context, arg ApproveUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, approveUser, arg.ID, arg.FirstName, arg.LastName)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.FirstName,
+		&i.LastName,
+		&i.Role,
+		&i.Status,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createUser = `-- name: CreateUser :one
+INSERT INTO users (
+    email, password_hash, first_name, last_name, role, status
+) VALUES (
+    $1, $2, $3, $4, $5, $6
+)
+RETURNING id, email, password_hash, first_name, last_name, role, status,
+          email_verified_at, created_at, updated_at
+`
+
+type CreateUserParams struct {
+	Email        string
+	PasswordHash string
+	FirstName    string
+	LastName     string
+	Role         UserRole
+	Status       UserStatus
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, createUser,
+		arg.Email,
+		arg.PasswordHash,
+		arg.FirstName,
+		arg.LastName,
+		arg.Role,
+		arg.Status,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.FirstName,
+		&i.LastName,
+		&i.Role,
+		&i.Status,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createUserVerified = `-- name: CreateUserVerified :one
+INSERT INTO users (
+    email, password_hash, first_name, last_name, role, status, email_verified_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, now()
+)
+RETURNING id, email, password_hash, first_name, last_name, role, status,
+          email_verified_at, created_at, updated_at
+`
+
+type CreateUserVerifiedParams struct {
+	Email        string
+	PasswordHash string
+	FirstName    string
+	LastName     string
+	Role         UserRole
+	Status       UserStatus
+}
+
+func (q *Queries) CreateUserVerified(ctx context.Context, arg CreateUserVerifiedParams) (User, error) {
+	row := q.db.QueryRow(ctx, createUserVerified,
+		arg.Email,
+		arg.PasswordHash,
+		arg.FirstName,
+		arg.LastName,
+		arg.Role,
+		arg.Status,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.FirstName,
+		&i.LastName,
+		&i.Role,
+		&i.Status,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, email, password_hash, first_name, last_name, role, status,
        email_verified_at, created_at, updated_at
@@ -45,6 +168,125 @@ WHERE id = $1
 
 func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.FirstName,
+		&i.LastName,
+		&i.Role,
+		&i.Status,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listApplications = `-- name: ListApplications :many
+SELECT
+    u.id,
+    u.email,
+    u.first_name,
+    u.last_name,
+    u.role,
+    u.status,
+    u.email_verified_at,
+    u.created_at,
+    u.updated_at,
+    p.phone,
+    p.level
+FROM users u
+JOIN profiles p ON p.user_id = u.id
+WHERE u.role = 'player'
+ORDER BY
+    CASE u.status WHEN 'pending' THEN 0 ELSE 1 END,
+    u.created_at DESC
+`
+
+type ListApplicationsRow struct {
+	ID              pgtype.UUID
+	Email           string
+	FirstName       string
+	LastName        string
+	Role            UserRole
+	Status          UserStatus
+	EmailVerifiedAt pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	Phone           pgtype.Text
+	Level           string
+}
+
+func (q *Queries) ListApplications(ctx context.Context) ([]ListApplicationsRow, error) {
+	rows, err := q.db.Query(ctx, listApplications)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListApplicationsRow{}
+	for rows.Next() {
+		var i ListApplicationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.FirstName,
+			&i.LastName,
+			&i.Role,
+			&i.Status,
+			&i.EmailVerifiedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Phone,
+			&i.Level,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markEmailVerified = `-- name: MarkEmailVerified :one
+UPDATE users
+SET email_verified_at = now(), updated_at = now()
+WHERE id = $1 AND email_verified_at IS NULL
+RETURNING id, email, password_hash, first_name, last_name, role, status,
+          email_verified_at, created_at, updated_at
+`
+
+func (q *Queries) MarkEmailVerified(ctx context.Context, id pgtype.UUID) (User, error) {
+	row := q.db.QueryRow(ctx, markEmailVerified, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.FirstName,
+		&i.LastName,
+		&i.Role,
+		&i.Status,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const rejectUser = `-- name: RejectUser :one
+UPDATE users
+SET status = 'rejected', updated_at = now()
+WHERE id = $1 AND status = 'pending'
+RETURNING id, email, password_hash, first_name, last_name, role, status,
+          email_verified_at, created_at, updated_at
+`
+
+func (q *Queries) RejectUser(ctx context.Context, id pgtype.UUID) (User, error) {
+	row := q.db.QueryRow(ctx, rejectUser, id)
 	var i User
 	err := row.Scan(
 		&i.ID,

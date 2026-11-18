@@ -29,9 +29,14 @@ func main() {
 	}
 	defer store.Close()
 
+	api := httpapi.NewWithOptions(httpapi.Options{
+		Store: store,
+		Cfg:   cfg,
+	})
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.New(store).Handler(),
+		Handler:           api.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,

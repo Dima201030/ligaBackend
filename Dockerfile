@@ -6,7 +6,8 @@ RUN apk add --no-cache git ca-certificates
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api \
+ && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/seed ./cmd/seed
 
 FROM alpine:3.21 AS migrate
 ARG TARGETARCH
@@ -30,6 +31,7 @@ FROM alpine:3.21
 RUN adduser -D -H -u 10001 app
 WORKDIR /app
 COPY --from=build /out/api /app/api
+COPY --from=build /out/seed /app/seed
 COPY migrations /app/migrations
 USER app
 EXPOSE 8080

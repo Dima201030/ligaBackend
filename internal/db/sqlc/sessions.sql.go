@@ -91,3 +91,38 @@ func (q *Queries) RevokeSession(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, revokeSession, id)
 	return err
 }
+
+const touchSession = `-- name: TouchSession :one
+UPDATE sessions
+SET last_seen_at = now(),
+    idle_expires_at = $2
+WHERE id = $1
+  AND revoked_at IS NULL
+  AND expires_at > now()
+  AND idle_expires_at > now()
+RETURNING id, user_id, token_hash, expires_at, idle_expires_at,
+          revoked_at, created_at, last_seen_at, ip, user_agent
+`
+
+type TouchSessionParams struct {
+	ID            pgtype.UUID
+	IdleExpiresAt pgtype.Timestamptz
+}
+
+func (q *Queries) TouchSession(ctx context.Context, arg TouchSessionParams) (Session, error) {
+	row := q.db.QueryRow(ctx, touchSession, arg.ID, arg.IdleExpiresAt)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.IdleExpiresAt,
+		&i.RevokedAt,
+		&i.CreatedAt,
+		&i.LastSeenAt,
+		&i.Ip,
+		&i.UserAgent,
+	)
+	return i, err
+}

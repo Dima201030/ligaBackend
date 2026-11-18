@@ -1,7 +1,7 @@
 # ligaBackend
 
-Go API для лиги Mr. Pushkin (D-017). Этап 2: Postgres, каркас HTTP, криптография.
-Auth register/login и UI — этап 3.
+Go API для лиги Mr. Pushkin (D-017). Этап 3: серверная авторизация, cookie-сессии,
+подтверждение email, заявки организатора.
 
 ## Стек
 
@@ -26,6 +26,45 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 - API: `http://127.0.0.1:3020`
 - Postgres: только внутри сети Compose (порт на хост не публикуется)
 
+### Auth API
+
+| Метод | Путь | Описание |
+|---|---|---|
+| POST | `/api/auth/register` | Регистрация → `pending` + profile + outbox |
+| POST | `/api/auth/login` | Вход (только `approved`; cookie-сессия) |
+| POST | `/api/auth/logout` | Отзыв сессии |
+| GET | `/api/auth/me` | Текущий пользователь |
+| GET/POST | `/api/auth/confirm-email` | Подтверждение email по токену |
+| GET | `/api/organizer/applications` | Список заявок (organizer+) |
+| POST | `/api/organizer/applications/{id}/approve` | Approve + правка ФИО/уровня |
+| POST | `/api/organizer/applications/{id}/reject` | Reject |
+
+Сессия: 32 random bytes в cookie `mpl_session` (prod: `__Host-mpl_session`),
+HttpOnly + SameSite=Lax + Secure(prod); в БД только SHA-256(token).
+
+### Seed организатора
+
+Пароль только из env (не коммитить):
+
+```bash
+export SEED_ORGANIZER_EMAIL='organizer@example.com'
+export SEED_ORGANIZER_PASSWORD='...' # минимум 8 символов
+docker compose run --rm --entrypoint /app/seed \
+  -e SEED_ORGANIZER_EMAIL -e SEED_ORGANIZER_PASSWORD \
+  -e SEED_ORGANIZER_FIRST_NAME -e SEED_ORGANIZER_LAST_NAME \
+  api
+```
+
+Локально (если Postgres доступен на хосте):
+
+```bash
+export DATABASE_URL='postgres://liga:liga@127.0.0.1:5432/liga?sslmode=disable'
+export APP_ENCRYPTION_KEY='...' # тот же, что у api
+export SEED_ORGANIZER_EMAIL='organizer@example.com'
+export SEED_ORGANIZER_PASSWORD='...'
+go run ./cmd/seed
+```
+
 ### Health и статус
 
 ```bash
@@ -33,21 +72,16 @@ curl -sS http://127.0.0.1:3020/api/health
 open http://127.0.0.1:3020/status
 ```
 
-`/api/health` — JSON с checks `api` и `database` (latency, без секретов).
-`/status` — EDITORIAL-страница со статусом сервисов, автообновление 5 с.
+`/api/health` и `/status` не содержат секретов.
 
 ### Повторный migrate
 
 ```bash
 docker compose run --rm migrate
-# локально (goose + DATABASE_URL на доступный Postgres):
 goose -dir migrations postgres "$DATABASE_URL" up
-goose -dir migrations postgres "$DATABASE_URL" status
 ```
 
 ## sqlc
-
-После изменения `sql/schema.sql` или `sql/queries/*.sql`:
 
 ```bash
 go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
@@ -60,27 +94,18 @@ sqlc generate
 go test ./...
 ```
 
-Проверяются Argon2id verify (верный / неверный пароль), AES-256-GCM roundtrip
-и `/api/health`. Пароль никогда не сравнивается через `==` / plaintext —
-только `VerifyPassword` (constant-time).
-
-## Локальный запуск API без Compose
-
-```bash
-export DATABASE_URL='postgres://liga:liga@127.0.0.1:5432/liga?sslmode=disable'
-export APP_ENCRYPTION_KEY="$(openssl rand -base64 32)"
-export HTTP_ADDR='127.0.0.1:3020'
-goose -dir migrations postgres "$DATABASE_URL" up
-go run ./cmd/api
-```
+Пароль никогда не сравнивается через `==` / plaintext — только `VerifyPassword`.
 
 ## Структура
 
 ```text
-cmd/api/           точка входа
+cmd/api/           HTTP API
+cmd/seed/          CLI seed approved organizer
+internal/auth/     сессии, rate limit, уровни
 internal/config/   env
 internal/crypto/   random, SHA-256 токенов, Argon2id, AES-GCM
-internal/http/     router, /api/health
+internal/http/     router, auth, organizer
+internal/mail/     email_outbox enqueue
 internal/db/       pgx pool + sqlc
 migrations/        goose
 sql/               schema + queries для sqlc
