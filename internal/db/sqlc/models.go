@@ -12,6 +12,49 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type BracketStatus string
+
+const (
+	BracketStatusNone      BracketStatus = "none"
+	BracketStatusDraft     BracketStatus = "draft"
+	BracketStatusPublished BracketStatus = "published"
+)
+
+func (e *BracketStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = BracketStatus(s)
+	case string:
+		*e = BracketStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for BracketStatus: %T", src)
+	}
+	return nil
+}
+
+type NullBracketStatus struct {
+	BracketStatus BracketStatus
+	Valid         bool // Valid is true if BracketStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullBracketStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.BracketStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.BracketStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullBracketStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.BracketStatus), nil
+}
+
 type EmailOutboxStatus string
 
 const (
@@ -54,6 +97,52 @@ func (ns NullEmailOutboxStatus) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.EmailOutboxStatus), nil
+}
+
+type MatchStatus string
+
+const (
+	MatchStatusScheduled MatchStatus = "scheduled"
+	MatchStatusLive      MatchStatus = "live"
+	MatchStatusCompleted MatchStatus = "completed"
+	MatchStatusCancelled MatchStatus = "cancelled"
+	MatchStatusWalkover  MatchStatus = "walkover"
+	MatchStatusBye       MatchStatus = "bye"
+)
+
+func (e *MatchStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = MatchStatus(s)
+	case string:
+		*e = MatchStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for MatchStatus: %T", src)
+	}
+	return nil
+}
+
+type NullMatchStatus struct {
+	MatchStatus MatchStatus
+	Valid       bool // Valid is true if MatchStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullMatchStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.MatchStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.MatchStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullMatchStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.MatchStatus), nil
 }
 
 type RegistrationStatus string
@@ -438,6 +527,42 @@ type EmailOutbox struct {
 	CreatedAt     pgtype.Timestamptz
 }
 
+type Match struct {
+	ID               pgtype.UUID
+	TournamentID     pgtype.UUID
+	BracketKey       string
+	Stage            string
+	RoundIndex       int32
+	Position         int32
+	RoundLabel       string
+	ScheduledAt      pgtype.Timestamptz
+	Court            pgtype.Text
+	Status           MatchStatus
+	ScoreSets        []byte
+	ScoreText        pgtype.Text
+	WinnerSide       pgtype.Int2
+	NextMatchID      pgtype.UUID
+	NextSlot         pgtype.Int2
+	LoserNextMatchID pgtype.UUID
+	LoserNextSlot    pgtype.Int2
+	IsBye            bool
+	Version          int32
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+}
+
+type MatchSide struct {
+	ID             pgtype.UUID
+	MatchID        pgtype.UUID
+	Side           int16
+	PlayerID       pgtype.UUID
+	PartnerID      pgtype.UUID
+	RegistrationID pgtype.UUID
+	Seed           pgtype.Int4
+	Label          pgtype.Text
+	IsBye          bool
+}
+
 type Profile struct {
 	UserID    pgtype.UUID
 	Phone     pgtype.Text
@@ -496,6 +621,10 @@ type Tournament struct {
 	CoverUrl             pgtype.Text
 	Season               int32
 	CreatedBy            pgtype.UUID
+	BracketStatus        BracketStatus
+	BracketPublishedAt   pgtype.Timestamptz
+	BracketVersion       int32
+	BracketThirdPlace    bool
 	CreatedAt            pgtype.Timestamptz
 	UpdatedAt            pgtype.Timestamptz
 }

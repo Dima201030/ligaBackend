@@ -37,6 +37,10 @@ type tournamentJSON struct {
 	Season               int32     `json:"season"`
 	ConfirmedCount       *int32    `json:"confirmed_count,omitempty"`
 	WaitlistCount        *int32    `json:"waitlist_count,omitempty"`
+	BracketStatus        string    `json:"bracket_status,omitempty"`
+	BracketVersion       *int32    `json:"bracket_version,omitempty"`
+	BracketPublishedAt   *string   `json:"bracket_published_at,omitempty"`
+	BracketThirdPlace    *bool     `json:"bracket_third_place,omitempty"`
 }
 
 type playerBriefJSON struct {
@@ -93,6 +97,15 @@ func tournamentFromRow(t sqlc.Tournament, regulations string) tournamentJSON {
 	if t.CoverUrl.Valid {
 		v := t.CoverUrl.String
 		out.CoverURL = &v
+	}
+	out.BracketStatus = string(t.BracketStatus)
+	v := t.BracketVersion
+	out.BracketVersion = &v
+	tp := t.BracketThirdPlace
+	out.BracketThirdPlace = &tp
+	if t.BracketPublishedAt.Valid {
+		s := t.BracketPublishedAt.Time.UTC().Format(time.RFC3339)
+		out.BracketPublishedAt = &s
 	}
 	return out
 }

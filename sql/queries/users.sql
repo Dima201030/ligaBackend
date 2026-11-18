@@ -71,3 +71,9 @@ WHERE u.role = 'player'
 ORDER BY
     CASE u.status WHEN 'pending' THEN 0 ELSE 1 END,
     u.created_at DESC;
+
+-- name: ListPlayerBriefsByIDs :many
+SELECT u.id, u.first_name, u.last_name, COALESCE(p.level, '') AS level
+FROM users u
+LEFT JOIN profiles p ON p.user_id = u.id
+WHERE u.id = ANY($1::uuid[]);

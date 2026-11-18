@@ -23,7 +23,7 @@ INSERT INTO tournaments (
     $13, $14, $15, $16,
     $17, $18, $19, $20, $21
 )
-RETURNING id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, season, created_by, created_at, updated_at
+RETURNING id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
 `
 
 type CreateTournamentParams struct {
@@ -98,6 +98,10 @@ func (q *Queries) CreateTournament(ctx context.Context, arg CreateTournamentPara
 		&i.CoverUrl,
 		&i.Season,
 		&i.CreatedBy,
+		&i.BracketStatus,
+		&i.BracketPublishedAt,
+		&i.BracketVersion,
+		&i.BracketThirdPlace,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -143,7 +147,7 @@ func (q *Queries) CreateTournamentRuleVersion(ctx context.Context, arg CreateTou
 }
 
 const getTournamentByID = `-- name: GetTournamentByID :one
-SELECT id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, season, created_by, created_at, updated_at FROM tournaments WHERE id = $1
+SELECT id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments WHERE id = $1
 `
 
 func (q *Queries) GetTournamentByID(ctx context.Context, id pgtype.UUID) (Tournament, error) {
@@ -172,6 +176,10 @@ func (q *Queries) GetTournamentByID(ctx context.Context, id pgtype.UUID) (Tourna
 		&i.CoverUrl,
 		&i.Season,
 		&i.CreatedBy,
+		&i.BracketStatus,
+		&i.BracketPublishedAt,
+		&i.BracketVersion,
+		&i.BracketThirdPlace,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -179,7 +187,7 @@ func (q *Queries) GetTournamentByID(ctx context.Context, id pgtype.UUID) (Tourna
 }
 
 const getTournamentBySlug = `-- name: GetTournamentBySlug :one
-SELECT id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, season, created_by, created_at, updated_at FROM tournaments WHERE slug = $1
+SELECT id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments WHERE slug = $1
 `
 
 func (q *Queries) GetTournamentBySlug(ctx context.Context, slug string) (Tournament, error) {
@@ -208,6 +216,10 @@ func (q *Queries) GetTournamentBySlug(ctx context.Context, slug string) (Tournam
 		&i.CoverUrl,
 		&i.Season,
 		&i.CreatedBy,
+		&i.BracketStatus,
+		&i.BracketPublishedAt,
+		&i.BracketVersion,
+		&i.BracketThirdPlace,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -237,7 +249,7 @@ func (q *Queries) LatestTournamentRuleVersion(ctx context.Context, tournamentID 
 }
 
 const listOrganizerTournaments = `-- name: ListOrganizerTournaments :many
-SELECT id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, season, created_by, created_at, updated_at FROM tournaments
+SELECT id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments
 ORDER BY
     CASE status
         WHEN 'live' THEN 0
@@ -285,6 +297,10 @@ func (q *Queries) ListOrganizerTournaments(ctx context.Context) ([]Tournament, e
 			&i.CoverUrl,
 			&i.Season,
 			&i.CreatedBy,
+			&i.BracketStatus,
+			&i.BracketPublishedAt,
+			&i.BracketVersion,
+			&i.BracketThirdPlace,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -299,7 +315,7 @@ func (q *Queries) ListOrganizerTournaments(ctx context.Context) ([]Tournament, e
 }
 
 const listPublicTournaments = `-- name: ListPublicTournaments :many
-SELECT id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, season, created_by, created_at, updated_at FROM tournaments
+SELECT id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments
 WHERE status <> 'draft'
 ORDER BY starts_at ASC
 `
@@ -336,6 +352,10 @@ func (q *Queries) ListPublicTournaments(ctx context.Context) ([]Tournament, erro
 			&i.CoverUrl,
 			&i.Season,
 			&i.CreatedBy,
+			&i.BracketStatus,
+			&i.BracketPublishedAt,
+			&i.BracketVersion,
+			&i.BracketThirdPlace,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -350,7 +370,7 @@ func (q *Queries) ListPublicTournaments(ctx context.Context) ([]Tournament, erro
 }
 
 const lockTournamentByID = `-- name: LockTournamentByID :one
-SELECT id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, season, created_by, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE
+SELECT id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) LockTournamentByID(ctx context.Context, id pgtype.UUID) (Tournament, error) {
@@ -379,6 +399,10 @@ func (q *Queries) LockTournamentByID(ctx context.Context, id pgtype.UUID) (Tourn
 		&i.CoverUrl,
 		&i.Season,
 		&i.CreatedBy,
+		&i.BracketStatus,
+		&i.BracketPublishedAt,
+		&i.BracketVersion,
+		&i.BracketThirdPlace,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -432,7 +456,7 @@ UPDATE tournaments SET
     season = $20,
     updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, season, created_by, created_at, updated_at
+RETURNING id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
 `
 
 type UpdateTournamentParams struct {
@@ -505,6 +529,10 @@ func (q *Queries) UpdateTournament(ctx context.Context, arg UpdateTournamentPara
 		&i.CoverUrl,
 		&i.Season,
 		&i.CreatedBy,
+		&i.BracketStatus,
+		&i.BracketPublishedAt,
+		&i.BracketVersion,
+		&i.BracketThirdPlace,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

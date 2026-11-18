@@ -64,6 +64,8 @@ func NewWithOptions(opts Options) *Server {
 
 	s.router.Get("/api/tournaments", s.handleListPublicTournaments)
 	s.router.Get("/api/tournaments/{slug}", s.handleGetPublicTournament)
+	s.router.Get("/api/tournaments/{slug}/bracket", s.handleGetPublicBracket)
+	s.router.Get("/api/tournaments/{slug}/matches", s.handleGetPublicTournamentMatches)
 	s.router.With(s.requireAuth, s.requireApproved).Post("/api/tournaments/{slug}/registrations", s.handleCreateRegistration)
 	s.router.With(s.requireAuth, s.requireApproved).Delete("/api/tournaments/{slug}/registrations/me", s.handleCancelRegistration)
 
@@ -77,6 +79,15 @@ func NewWithOptions(opts Options) *Server {
 		r.Post("/tournaments", s.handleCreateTournament)
 		r.Get("/tournaments/{id}", s.handleGetOrganizerTournament)
 		r.Patch("/tournaments/{id}", s.handleUpdateTournament)
+		r.Get("/tournaments/{id}/bracket", s.handleGetOrganizerBracket)
+		r.Post("/tournaments/{id}/bracket/generate", s.handleGenerateBracket)
+		r.Post("/tournaments/{id}/bracket/publish", s.handlePublishBracket)
+		r.Get("/tournaments/{id}/matches", s.handleListOrganizerTournamentMatches)
+		r.Get("/matches", s.handleListOrganizerMatches)
+		r.Patch("/matches/{id}", s.handleUpdateMatchSchedule)
+		r.Post("/matches/{id}/score", s.handleSubmitScore)
+		r.Post("/matches/{id}/walkover", s.handleWalkover)
+		r.Post("/matches/{id}/cancel", s.handleCancelMatch)
 	})
 
 	return s

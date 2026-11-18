@@ -133,6 +133,21 @@ CREATE TYPE registration_status AS ENUM (
     'rejected'
 );
 
+CREATE TYPE match_status AS ENUM (
+    'scheduled',
+    'live',
+    'completed',
+    'cancelled',
+    'walkover',
+    'bye'
+);
+
+CREATE TYPE bracket_status AS ENUM (
+    'none',
+    'draft',
+    'published'
+);
+
 CREATE TABLE tournaments (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     slug                    TEXT NOT NULL,
@@ -156,6 +171,10 @@ CREATE TABLE tournaments (
     cover_url               TEXT,
     season                  INT NOT NULL,
     created_by              UUID REFERENCES users (id) ON DELETE SET NULL,
+    bracket_status          bracket_status NOT NULL DEFAULT 'none',
+    bracket_published_at    TIMESTAMPTZ,
+    bracket_version         INT NOT NULL DEFAULT 0,
+    bracket_third_place     BOOLEAN NOT NULL DEFAULT false,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT tournaments_slug_uidx UNIQUE (slug),
@@ -163,6 +182,7 @@ CREATE TABLE tournaments (
     CONSTRAINT tournaments_max_participants_chk CHECK (max_participants >= 2 AND max_participants <= 256),
     CONSTRAINT tournaments_entry_fee_chk CHECK (entry_fee >= 0),
     CONSTRAINT tournaments_venue_courts_chk CHECK (venue_courts >= 1 AND venue_courts <= 64),
+    CONSTRAINT tournaments_bracket_version_chk CHECK (bracket_version >= 0),
     CONSTRAINT tournaments_category_chk CHECK (
         category IN ('masters', 'challenger', 'futures', 'rookies', 'beginners', 'newcomers')
     ),
@@ -221,3 +241,57 @@ CREATE UNIQUE INDEX registrations_active_partner_uidx
     ON registrations (tournament_id, partner_id)
     WHERE partner_id IS NOT NULL
       AND status IN ('pending', 'confirmed', 'waitlist');
+
+CREATE TABLE matches (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tournament_id       UUID NOT NULL REFERENCES tournaments (id) ON DELETE CASCADE,
+    bracket_key         TEXT NOT NULL,
+    stage               TEXT NOT NULL DEFAULT 'main',
+    round_index         INT NOT NULL DEFAULT 0,
+    position            INT NOT NULL DEFAULT 0,
+    round_label         TEXT NOT NULL DEFAULT '',
+    scheduled_at        TIMESTAMPTZ,
+    court               TEXT,
+    status              match_status NOT NULL DEFAULT 'scheduled',
+    score_sets          JSONB,
+    score_text          TEXT,
+    winner_side         SMALLINT,
+    next_match_id       UUID REFERENCES matches (id) ON DELETE SET NULL,
+    next_slot           SMALLINT,
+    loser_next_match_id UUID REFERENCES matches (id) ON DELETE SET NULL,
+    loser_next_slot     SMALLINT,
+    is_bye              BOOLEAN NOT NULL DEFAULT false,
+    version             INT NOT NULL DEFAULT 1,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT matches_tournament_key_uidx UNIQUE (tournament_id, bracket_key),
+    CONSTRAINT matches_winner_side_chk CHECK (winner_side IS NULL OR winner_side IN (1, 2)),
+    CONSTRAINT matches_next_slot_chk CHECK (next_slot IS NULL OR next_slot IN (1, 2)),
+    CONSTRAINT matches_loser_next_slot_chk CHECK (loser_next_slot IS NULL OR loser_next_slot IN (1, 2)),
+    CONSTRAINT matches_version_chk CHECK (version >= 1),
+    CONSTRAINT matches_round_index_chk CHECK (round_index >= 0),
+    CONSTRAINT matches_position_chk CHECK (position >= 0)
+);
+
+CREATE INDEX matches_tournament_id_idx ON matches (tournament_id);
+CREATE INDEX matches_tournament_status_idx ON matches (tournament_id, status);
+CREATE INDEX matches_next_match_id_idx ON matches (next_match_id);
+CREATE INDEX matches_scheduled_at_idx ON matches (scheduled_at);
+
+CREATE TABLE match_sides (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    match_id         UUID NOT NULL REFERENCES matches (id) ON DELETE CASCADE,
+    side             SMALLINT NOT NULL,
+    player_id        UUID REFERENCES users (id) ON DELETE SET NULL,
+    partner_id       UUID REFERENCES users (id) ON DELETE SET NULL,
+    registration_id  UUID REFERENCES registrations (id) ON DELETE SET NULL,
+    seed             INT,
+    label            TEXT,
+    is_bye           BOOLEAN NOT NULL DEFAULT false,
+    CONSTRAINT match_sides_match_side_uidx UNIQUE (match_id, side),
+    CONSTRAINT match_sides_side_chk CHECK (side IN (1, 2)),
+    CONSTRAINT match_sides_seed_chk CHECK (seed IS NULL OR seed >= 1)
+);
+
+CREATE INDEX match_sides_match_id_idx ON match_sides (match_id);
+CREATE INDEX match_sides_player_id_idx ON match_sides (player_id);

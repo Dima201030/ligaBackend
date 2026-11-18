@@ -251,6 +251,45 @@ func (q *Queries) ListApplications(ctx context.Context) ([]ListApplicationsRow, 
 	return items, nil
 }
 
+const listPlayerBriefsByIDs = `-- name: ListPlayerBriefsByIDs :many
+SELECT u.id, u.first_name, u.last_name, COALESCE(p.level, '') AS level
+FROM users u
+LEFT JOIN profiles p ON p.user_id = u.id
+WHERE u.id = ANY($1::uuid[])
+`
+
+type ListPlayerBriefsByIDsRow struct {
+	ID        pgtype.UUID
+	FirstName string
+	LastName  string
+	Level     string
+}
+
+func (q *Queries) ListPlayerBriefsByIDs(ctx context.Context, dollar_1 []pgtype.UUID) ([]ListPlayerBriefsByIDsRow, error) {
+	rows, err := q.db.Query(ctx, listPlayerBriefsByIDs, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPlayerBriefsByIDsRow{}
+	for rows.Next() {
+		var i ListPlayerBriefsByIDsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FirstName,
+			&i.LastName,
+			&i.Level,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markEmailVerified = `-- name: MarkEmailVerified :one
 UPDATE users
 SET email_verified_at = now(), updated_at = now()
