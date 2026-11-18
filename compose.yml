@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:17
+    container_name: liga-backend-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: liga
+      POSTGRES_PASSWORD: liga
+      POSTGRES_DB: liga
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U liga -d liga"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    # Port is not published to the host; only reachable on the compose network.
+
+  migrate:
+    build:
+      context: .
+      target: migrate
+    container_name: liga-backend-migrate
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["postgres://liga:liga@db:5432/liga?sslmode=disable", "up"]
+    restart: "no"
+
+  api:
+    build: .
+    container_name: liga-backend-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      HTTP_ADDR: 0.0.0.0:8080
+      DATABASE_URL: postgres://liga:liga@db:5432/liga?sslmode=disable
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY in .env}
+    ports:
+      - "127.0.0.1:3020:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  pgdata:
