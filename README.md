@@ -17,6 +17,7 @@ cp .env.example .env
 # сгенерировать ключ и вписать в APP_ENCRYPTION_KEY (не коммитить .env):
 openssl rand -base64 32
 
+./scripts/fetch-goose.sh   # linux-бинарники goose в third_party/ (не в git)
 docker compose up -d --build
 ```
 
@@ -37,7 +38,7 @@ curl -sS http://127.0.0.1:3020/api/health
 
 ```bash
 docker compose run --rm migrate
-# или локально (если есть доступ к Postgres):
+# локально (goose + DATABASE_URL на доступный Postgres):
 goose -dir migrations postgres "$DATABASE_URL" up
 goose -dir migrations postgres "$DATABASE_URL" status
 ```

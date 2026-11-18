@@ -8,20 +8,26 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
 
-FROM golang:1.23-alpine AS goose
-RUN apk add --no-cache git ca-certificates \
-  && go install github.com/pressly/goose/v3/cmd/goose@v3.24.1
-
 FROM alpine:3.21 AS migrate
-RUN apk add --no-cache ca-certificates
-COPY --from=goose /go/bin/goose /usr/local/bin/goose
+ARG TARGETARCH
+COPY third_party/goose_linux_arm64 third_party/goose_linux_x86_64 /tmp/
+RUN arch="${TARGETARCH:-}" \
+  && if [ -z "$arch" ]; then arch="$(uname -m)"; fi \
+  && case "$arch" in \
+       amd64|x86_64) src=/tmp/goose_linux_x86_64 ;; \
+       arm64|aarch64) src=/tmp/goose_linux_arm64 ;; \
+       *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+     esac \
+  && mv "$src" /usr/local/bin/goose \
+  && chmod +x /usr/local/bin/goose \
+  && rm -f /tmp/goose_linux_*
 COPY migrations /migrations
 WORKDIR /migrations
 ENTRYPOINT ["goose", "-dir", "/migrations", "postgres"]
 
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates wget \
-  && adduser -D -H -u 10001 app
+# BusyBox wget is enough for the healthcheck; avoid apk (needs network mirrors).
+RUN adduser -D -H -u 10001 app
 WORKDIR /app
 COPY --from=build /out/api /app/api
 COPY migrations /app/migrations
