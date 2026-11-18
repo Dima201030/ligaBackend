@@ -26,13 +26,15 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 - API: `http://127.0.0.1:3020`
 - Postgres: только внутри сети Compose (порт на хост не публикуется)
 
-### Health
+### Health и статус
 
 ```bash
 curl -sS http://127.0.0.1:3020/api/health
+open http://127.0.0.1:3020/status
 ```
 
-Ожидается HTTP 200 и JSON без секретов.
+`/api/health` — JSON с checks `api` и `database` (latency, без секретов).
+`/status` — EDITORIAL-страница со статусом сервисов, автообновление 5 с.
 
 ### Повторный migrate
 
