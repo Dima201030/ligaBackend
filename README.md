@@ -119,6 +119,25 @@ curl -sS -b cookies.txt -F file=@cover.jpg \
   http://127.0.0.1:3020/api/organizer/files
 ```
 
+### Nightly rankings snapshot
+
+По `docs/RATING.md` — пересчёт окна 52 недель + снимок `rankings` (по умолчанию
+**03:30 Europe/Moscow**). Идемпотентно раз в локальные сутки.
+
+```bash
+# one-shot (удобно из cron на хосте)
+RANKING_SNAPSHOT_ONCE=1 go run ./cmd/rankingsnapshot
+
+# long-running loop
+go run ./cmd/rankingsnapshot
+
+# compose
+docker compose --profile jobs up -d rankingsnapshot
+```
+
+`RANKING_SNAPSHOT_FORCE=1` — пересчитать даже если снимок за сегодня уже есть.
+Ручной вызов организатора: `POST /api/organizer/ratings/snapshot` (без окна очков).
+
 ### Mail worker (SMTP)
 
 Письма всегда сначала попадают в `email_outbox`. Доставка — отдельный процесс:
@@ -195,6 +214,7 @@ go test ./...
 cmd/api/           HTTP API
 cmd/seed/          CLI seed approved organizer
 cmd/mailworker/    SMTP drain of email_outbox
+cmd/rankingsnapshot nightly points window + rankings snapshot
 internal/auth/     сессии, rate limit, уровни
 internal/config/   env
 internal/crypto/   random, SHA-256 токенов, Argon2id, AES-GCM

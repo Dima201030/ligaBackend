@@ -84,6 +84,25 @@ services:
       MAIL_POLL_SECONDS: ${MAIL_POLL_SECONDS:-15}
       MAIL_BATCH_SIZE: ${MAIL_BATCH_SIZE:-20}
 
+  rankingsnapshot:
+    build: .
+    container_name: liga-backend-rankingsnapshot
+    restart: unless-stopped
+    entrypoint: ["/app/rankingsnapshot"]
+    profiles: ["jobs"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://liga:liga@db:5432/liga?sslmode=disable
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY in .env}
+      RANKING_SNAPSHOT_TZ: ${RANKING_SNAPSHOT_TZ:-Europe/Moscow}
+      RANKING_SNAPSHOT_AT: ${RANKING_SNAPSHOT_AT:-03:30}
+      RANKING_SEASON: ${RANKING_SEASON:-}
+      RANKING_SNAPSHOT_FORCE: ${RANKING_SNAPSHOT_FORCE:-0}
+
 volumes:
   pgdata:
   uploads:
