@@ -1,22 +1,22 @@
 -- name: CreateProfile :one
 INSERT INTO profiles (
     user_id, phone, level, slug, gender, city, bio, avatar_url,
-    player_status, rating, points, matches_played, wins, losses
+    player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
-    $9, $10, $11, $12, $13, $14
+    $9, $10, $11, $12, $13, $14, $15, $16
 )
 RETURNING *;
 
 -- name: GetProfileByUserID :one
 SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
-       rating, points, matches_played, wins, losses, created_at, updated_at
+       rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
 WHERE user_id = $1;
 
 -- name: GetProfileBySlug :one
 SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
-       rating, points, matches_played, wins, losses, created_at, updated_at
+       rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
 WHERE slug = $1;
 
@@ -52,6 +52,8 @@ SELECT
     p.player_status,
     p.rating,
     p.points,
+    p.singles_points,
+    p.doubles_points,
     p.matches_played,
     p.wins,
     p.losses,
@@ -86,6 +88,8 @@ SELECT
     p.player_status,
     p.rating,
     p.points,
+    p.singles_points,
+    p.doubles_points,
     p.matches_played,
     p.wins,
     p.losses,
@@ -114,6 +118,8 @@ SELECT
     p.player_status,
     p.rating,
     p.points,
+    p.singles_points,
+    p.doubles_points,
     p.matches_played,
     p.wins,
     p.losses,

@@ -80,8 +80,8 @@ func RunNightly(ctx context.Context, store *db.Store, opts NightlyOptions) (Nigh
 	}, nil
 }
 
-// RecalcPointsFromWindow sets profile.points from best tournament results in the config window.
-// Until singles/doubles are split on events, uses best (BestSingles+BestDoubles) of all tournament deltas.
+// RecalcPointsFromWindow sets profile singles/doubles/points from best tournament results
+// in the config window (best BestSingles singles + best BestDoubles doubles).
 func RecalcPointsFromWindow(ctx context.Context, store *db.Store, season int32, now time.Time) (int, error) {
 	_, coeffs, err := loadConfig(ctx, store.Queries, season)
 	if err != nil {
@@ -91,10 +91,6 @@ func RecalcPointsFromWindow(ctx context.Context, store *db.Store, season int32, 
 	if weeks <= 0 {
 		weeks = DefaultCoeffs.WindowWeeks
 	}
-	bestN := coeffs.BestSingles + coeffs.BestDoubles
-	if bestN <= 0 {
-		bestN = DefaultCoeffs.BestSingles + DefaultCoeffs.BestDoubles
-	}
 	since := now.UTC().Add(-time.Duration(weeks) * 7 * 24 * time.Hour)
 
 	rows, err := store.Queries.ListTournamentPointEventsInWindow(ctx, pgtype.Timestamptz{Time: since, Valid: true})
@@ -102,20 +98,35 @@ func RecalcPointsFromWindow(ctx context.Context, store *db.Store, season int32, 
 		return 0, err
 	}
 
-	byPlayer := map[string][]int{}
+	type buckets struct {
+		singles []int
+		doubles []int
+	}
+	byPlayer := map[string]*buckets{}
 	ids := map[string]pgtype.UUID{}
 	for _, row := range rows {
 		key := uuidString(row.PlayerID)
 		ids[key] = row.PlayerID
-		byPlayer[key] = append(byPlayer[key], int(row.PointsDelta))
+		b, ok := byPlayer[key]
+		if !ok {
+			b = &buckets{}
+			byPlayer[key] = b
+		}
+		delta := int(row.PointsDelta)
+		if NormalizeDiscipline(row.Discipline) == DisciplineDoubles {
+			b.doubles = append(b.doubles, delta)
+		} else {
+			b.singles = append(b.singles, delta)
+		}
 	}
 
 	updated := 0
-	for key, deltas := range byPlayer {
-		sum := SelectBestSums(deltas, bestN)
-		if _, err := store.Queries.SetProfilePoints(ctx, sqlc.SetProfilePointsParams{
-			UserID: ids[key],
-			Points: int32(sum),
+	for key, b := range byPlayer {
+		br := SplitBestWindowSums(b.singles, b.doubles, coeffs)
+		if _, err := store.Queries.SetProfilePointsBreakdown(ctx, sqlc.SetProfilePointsBreakdownParams{
+			UserID:        ids[key],
+			SinglesPoints: int32(br.Singles),
+			DoublesPoints: int32(br.Doubles),
 		}); err != nil {
 			return updated, err
 		}

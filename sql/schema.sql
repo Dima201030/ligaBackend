@@ -50,6 +50,8 @@ CREATE TABLE profiles (
     player_status   TEXT NOT NULL DEFAULT 'active',
     rating          DOUBLE PRECISION NOT NULL DEFAULT 1200,
     points          INT NOT NULL DEFAULT 0,
+    singles_points  INT NOT NULL DEFAULT 0,
+    doubles_points  INT NOT NULL DEFAULT 0,
     matches_played  INT NOT NULL DEFAULT 0,
     wins            INT NOT NULL DEFAULT 0,
     losses          INT NOT NULL DEFAULT 0,
@@ -63,6 +65,8 @@ CREATE TABLE profiles (
     CONSTRAINT profiles_player_status_chk CHECK (player_status IN ('active', 'blocked', 'archived')),
     CONSTRAINT profiles_rating_chk CHECK (rating >= 800),
     CONSTRAINT profiles_points_chk CHECK (points >= 0),
+    CONSTRAINT profiles_singles_points_chk CHECK (singles_points >= 0),
+    CONSTRAINT profiles_doubles_points_chk CHECK (doubles_points >= 0),
     CONSTRAINT profiles_matches_played_chk CHECK (matches_played >= 0),
     CONSTRAINT profiles_wins_chk CHECK (wins >= 0),
     CONSTRAINT profiles_losses_chk CHECK (losses >= 0)
@@ -350,6 +354,7 @@ CREATE TABLE rating_events (
     match_id        UUID REFERENCES matches (id) ON DELETE SET NULL,
     tournament_id   UUID REFERENCES tournaments (id) ON DELETE SET NULL,
     kind            rating_event_kind NOT NULL,
+    discipline      TEXT NOT NULL DEFAULT 'singles',
     points_delta    INT NOT NULL DEFAULT 0,
     rating_delta    DOUBLE PRECISION NOT NULL DEFAULT 0,
     rating_after    DOUBLE PRECISION NOT NULL,
@@ -359,7 +364,8 @@ CREATE TABLE rating_events (
     created_by      UUID REFERENCES users (id) ON DELETE SET NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT rating_events_rating_after_chk CHECK (rating_after >= 800),
-    CONSTRAINT rating_events_points_after_chk CHECK (points_after >= 0)
+    CONSTRAINT rating_events_points_after_chk CHECK (points_after >= 0),
+    CONSTRAINT rating_events_discipline_chk CHECK (discipline IN ('singles', 'doubles'))
 );
 
 CREATE UNIQUE INDEX rating_events_match_player_kind_uidx
@@ -372,6 +378,8 @@ CREATE UNIQUE INDEX rating_events_tournament_player_kind_uidx
 
 CREATE INDEX rating_events_player_id_idx ON rating_events (player_id, created_at DESC);
 CREATE INDEX rating_events_created_at_idx ON rating_events (created_at DESC);
+CREATE INDEX rating_events_discipline_idx ON rating_events (discipline)
+    WHERE kind = 'tournament';
 
 CREATE TABLE rankings (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -12,11 +12,11 @@ WHERE id = $1;
 
 -- name: InsertRatingEvent :one
 INSERT INTO rating_events (
-    player_id, match_id, tournament_id, kind,
+    player_id, match_id, tournament_id, kind, discipline,
     points_delta, rating_delta, rating_after, points_after,
     config_id, reason, created_by
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 )
 RETURNING *;
 
@@ -33,7 +33,7 @@ SELECT EXISTS(
 )::bool AS exists;
 
 -- name: ListRatingEventsByPlayer :many
-SELECT id, player_id, match_id, tournament_id, kind,
+SELECT id, player_id, match_id, tournament_id, kind, discipline,
        points_delta, rating_delta, rating_after, points_after,
        config_id, reason, created_by, created_at
 FROM rating_events
@@ -42,7 +42,7 @@ ORDER BY created_at DESC
 LIMIT $2;
 
 -- name: ListTournamentPointEventsInWindow :many
-SELECT player_id, points_delta, tournament_id, created_at
+SELECT player_id, points_delta, tournament_id, discipline, created_at
 FROM rating_events
 WHERE kind = 'tournament'
   AND created_at >= $1
@@ -65,9 +65,18 @@ SET points = $2, updated_at = now()
 WHERE user_id = $1
 RETURNING *;
 
+-- name: SetProfilePointsBreakdown :one
+UPDATE profiles
+SET singles_points = sqlc.arg(singles_points),
+    doubles_points = sqlc.arg(doubles_points),
+    points = sqlc.arg(singles_points) + sqlc.arg(doubles_points),
+    updated_at = now()
+WHERE user_id = sqlc.arg(user_id)
+RETURNING *;
+
 -- name: LockProfileForUpdate :one
 SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
-       rating, points, matches_played, wins, losses, created_at, updated_at
+       rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
 WHERE user_id = $1
 FOR UPDATE;

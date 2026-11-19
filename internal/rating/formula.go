@@ -2,6 +2,12 @@ package rating
 
 import (
 	"math"
+	"strings"
+)
+
+const (
+	DisciplineSingles = "singles"
+	DisciplineDoubles = "doubles"
 )
 
 // DefaultCoeffs is revision-1 proposal from docs/RATING.md until club lock.
@@ -198,6 +204,50 @@ func SelectBestSums(values []int, n int) int {
 		sum += cp[i]
 	}
 	return sum
+}
+
+// DisciplineFromTournamentType maps tournament type → singles/doubles pool.
+// doubles/mixed/teams → doubles; singles/cup/final (and unknown) → singles.
+func DisciplineFromTournamentType(tournamentType string) string {
+	switch strings.ToLower(strings.TrimSpace(tournamentType)) {
+	case "doubles", "mixed", "teams":
+		return DisciplineDoubles
+	default:
+		return DisciplineSingles
+	}
+}
+
+// NormalizeDiscipline returns singles or doubles.
+func NormalizeDiscipline(d string) string {
+	if strings.EqualFold(strings.TrimSpace(d), DisciplineDoubles) {
+		return DisciplineDoubles
+	}
+	return DisciplineSingles
+}
+
+// WindowPointsBreakdown is best-N singles + best-N doubles from a rolling window.
+type WindowPointsBreakdown struct {
+	Singles int
+	Doubles int
+}
+
+// Total is singles + doubles.
+func (b WindowPointsBreakdown) Total() int { return b.Singles + b.Doubles }
+
+// SplitBestWindowSums applies BestSingles / BestDoubles caps separately.
+func SplitBestWindowSums(singlesDeltas, doublesDeltas []int, c Coefficients) WindowPointsBreakdown {
+	bestS := c.BestSingles
+	bestD := c.BestDoubles
+	if bestS <= 0 {
+		bestS = DefaultCoeffs.BestSingles
+	}
+	if bestD <= 0 {
+		bestD = DefaultCoeffs.BestDoubles
+	}
+	return WindowPointsBreakdown{
+		Singles: SelectBestSums(singlesDeltas, bestS),
+		Doubles: SelectBestSums(doublesDeltas, bestD),
+	}
 }
 
 func clamp(v, lo, hi float64) float64 {

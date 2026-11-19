@@ -25,17 +25,19 @@ type playerJSON struct {
 	Bio           string  `json:"bio"`
 	AvatarURL     *string `json:"avatar_url,omitempty"`
 	Status        string  `json:"status"`
-	Rating        float64 `json:"rating"`
-	Points        int32   `json:"points"`
-	MatchesPlayed int32   `json:"matches_played"`
-	Wins          int32   `json:"wins"`
-	Losses        int32   `json:"losses"`
-	Provisional   bool    `json:"provisional"`
-	Email         string  `json:"email,omitempty"`
-	Phone         *string `json:"phone,omitempty"`
-	UserStatus    string  `json:"user_status,omitempty"`
-	Role          string  `json:"role,omitempty"`
-	MemberSince   string  `json:"member_since,omitempty"`
+	Rating         float64 `json:"rating"`
+	Points         int32   `json:"points"`
+	SinglesPoints  int32   `json:"singles_points"`
+	DoublesPoints  int32   `json:"doubles_points"`
+	MatchesPlayed  int32   `json:"matches_played"`
+	Wins           int32   `json:"wins"`
+	Losses         int32   `json:"losses"`
+	Provisional    bool    `json:"provisional"`
+	Email          string  `json:"email,omitempty"`
+	Phone          *string `json:"phone,omitempty"`
+	UserStatus     string  `json:"user_status,omitempty"`
+	Role           string  `json:"role,omitempty"`
+	MemberSince    string  `json:"member_since,omitempty"`
 }
 
 func (s *Server) handleListPublicPlayers(w http.ResponseWriter, r *http.Request) {
@@ -185,6 +187,8 @@ func publicPlayerFromRow(row sqlc.ListPublicPlayersRow) playerJSON {
 		Status:        row.PlayerStatus,
 		Rating:        round1(row.Rating),
 		Points:        row.Points,
+		SinglesPoints: row.SinglesPoints,
+		DoublesPoints: row.DoublesPoints,
 		MatchesPlayed: row.MatchesPlayed,
 		Wins:          row.Wins,
 		Losses:        row.Losses,
@@ -208,6 +212,8 @@ func publicPlayerDetail(row sqlc.GetPublicPlayerBySlugRow) playerJSON {
 		Status:        row.PlayerStatus,
 		Rating:        round1(row.Rating),
 		Points:        row.Points,
+		SinglesPoints: row.SinglesPoints,
+		DoublesPoints: row.DoublesPoints,
 		MatchesPlayed: row.MatchesPlayed,
 		Wins:          row.Wins,
 		Losses:        row.Losses,
@@ -231,6 +237,8 @@ func organizerPlayerFromRow(row sqlc.ListOrganizerPlayersRow) playerJSON {
 		Status:        row.PlayerStatus,
 		Rating:        round1(row.Rating),
 		Points:        row.Points,
+		SinglesPoints: row.SinglesPoints,
+		DoublesPoints: row.DoublesPoints,
 		MatchesPlayed: row.MatchesPlayed,
 		Wins:          row.Wins,
 		Losses:        row.Losses,

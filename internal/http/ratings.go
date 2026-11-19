@@ -32,6 +32,7 @@ type rankingJSON struct {
 type ratingEventJSON struct {
 	ID           string  `json:"id"`
 	Kind         string  `json:"kind"`
+	Discipline   string  `json:"discipline"`
 	PointsDelta  int32   `json:"points_delta"`
 	RatingDelta  float64 `json:"rating_delta"`
 	RatingAfter  float64 `json:"rating_after"`
@@ -77,7 +78,8 @@ func (s *Server) handleListRankings(w http.ResponseWriter, r *http.Request) {
 				Category:      p.Level,
 				Points:        p.Points,
 				Rating:        round1(p.Rating),
-				SinglesPoints: p.Points,
+				SinglesPoints: p.SinglesPoints,
+				DoublesPoints: p.DoublesPoints,
 				CalculatedAt:  time.Now().UTC().Format(time.RFC3339),
 			})
 		}
@@ -141,6 +143,7 @@ func (s *Server) handlePlayerRatingEvents(w http.ResponseWriter, r *http.Request
 		item := ratingEventJSON{
 			ID:          uuidString(row.ID),
 			Kind:        string(row.Kind),
+			Discipline:  row.Discipline,
 			PointsDelta: row.PointsDelta,
 			RatingDelta: round1(row.RatingDelta),
 			RatingAfter: round1(row.RatingAfter),
@@ -166,6 +169,7 @@ type manualRatingRequest struct {
 	Season      int     `json:"season"`
 	PointsDelta int32   `json:"points_delta"`
 	RatingDelta float64 `json:"rating_delta"`
+	Discipline  string  `json:"discipline"`
 	Reason      string  `json:"reason"`
 }
 
@@ -194,6 +198,7 @@ func (s *Server) handleManualRating(w http.ResponseWriter, r *http.Request) {
 		Season:      season,
 		PointsDelta: req.PointsDelta,
 		RatingDelta: req.RatingDelta,
+		Discipline:  req.Discipline,
 		Reason:      strings.TrimSpace(req.Reason),
 		ActorID:     actor.ID,
 	})

@@ -14,12 +14,12 @@ import (
 const createProfile = `-- name: CreateProfile :one
 INSERT INTO profiles (
     user_id, phone, level, slug, gender, city, bio, avatar_url,
-    player_status, rating, points, matches_played, wins, losses
+    player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
-    $9, $10, $11, $12, $13, $14
+    $9, $10, $11, $12, $13, $14, $15, $16
 )
-RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 `
 
 type CreateProfileParams struct {
@@ -34,6 +34,8 @@ type CreateProfileParams struct {
 	PlayerStatus  string
 	Rating        float64
 	Points        int32
+	SinglesPoints int32
+	DoublesPoints int32
 	MatchesPlayed int32
 	Wins          int32
 	Losses        int32
@@ -52,6 +54,8 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 		arg.PlayerStatus,
 		arg.Rating,
 		arg.Points,
+		arg.SinglesPoints,
+		arg.DoublesPoints,
 		arg.MatchesPlayed,
 		arg.Wins,
 		arg.Losses,
@@ -70,6 +74,8 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 		&i.PlayerStatus,
 		&i.Rating,
 		&i.Points,
+		&i.SinglesPoints,
+		&i.DoublesPoints,
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
@@ -81,7 +87,7 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 
 const getProfileBySlug = `-- name: GetProfileBySlug :one
 SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
-       rating, points, matches_played, wins, losses, created_at, updated_at
+       rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
 WHERE slug = $1
 `
@@ -102,6 +108,8 @@ func (q *Queries) GetProfileBySlug(ctx context.Context, slug string) (Profile, e
 		&i.PlayerStatus,
 		&i.Rating,
 		&i.Points,
+		&i.SinglesPoints,
+		&i.DoublesPoints,
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
@@ -113,7 +121,7 @@ func (q *Queries) GetProfileBySlug(ctx context.Context, slug string) (Profile, e
 
 const getProfileByUserID = `-- name: GetProfileByUserID :one
 SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
-       rating, points, matches_played, wins, losses, created_at, updated_at
+       rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
 WHERE user_id = $1
 `
@@ -134,6 +142,8 @@ func (q *Queries) GetProfileByUserID(ctx context.Context, userID pgtype.UUID) (P
 		&i.PlayerStatus,
 		&i.Rating,
 		&i.Points,
+		&i.SinglesPoints,
+		&i.DoublesPoints,
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
@@ -158,6 +168,8 @@ SELECT
     p.player_status,
     p.rating,
     p.points,
+    p.singles_points,
+    p.doubles_points,
     p.matches_played,
     p.wins,
     p.losses,
@@ -184,6 +196,8 @@ type GetPublicPlayerBySlugRow struct {
 	PlayerStatus  string
 	Rating        float64
 	Points        int32
+	SinglesPoints int32
+	DoublesPoints int32
 	MatchesPlayed int32
 	Wins          int32
 	Losses        int32
@@ -208,6 +222,8 @@ func (q *Queries) GetPublicPlayerBySlug(ctx context.Context, slug string) (GetPu
 		&i.PlayerStatus,
 		&i.Rating,
 		&i.Points,
+		&i.SinglesPoints,
+		&i.DoublesPoints,
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
@@ -234,6 +250,8 @@ SELECT
     p.player_status,
     p.rating,
     p.points,
+    p.singles_points,
+    p.doubles_points,
     p.matches_played,
     p.wins,
     p.losses,
@@ -271,6 +289,8 @@ type ListOrganizerPlayersRow struct {
 	PlayerStatus  string
 	Rating        float64
 	Points        int32
+	SinglesPoints int32
+	DoublesPoints int32
 	MatchesPlayed int32
 	Wins          int32
 	Losses        int32
@@ -309,6 +329,8 @@ func (q *Queries) ListOrganizerPlayers(ctx context.Context, arg ListOrganizerPla
 			&i.PlayerStatus,
 			&i.Rating,
 			&i.Points,
+			&i.SinglesPoints,
+			&i.DoublesPoints,
 			&i.MatchesPlayed,
 			&i.Wins,
 			&i.Losses,
@@ -341,6 +363,8 @@ SELECT
     p.player_status,
     p.rating,
     p.points,
+    p.singles_points,
+    p.doubles_points,
     p.matches_played,
     p.wins,
     p.losses,
@@ -382,6 +406,8 @@ type ListPublicPlayersRow struct {
 	PlayerStatus  string
 	Rating        float64
 	Points        int32
+	SinglesPoints int32
+	DoublesPoints int32
 	MatchesPlayed int32
 	Wins          int32
 	Losses        int32
@@ -417,6 +443,8 @@ func (q *Queries) ListPublicPlayers(ctx context.Context, arg ListPublicPlayersPa
 			&i.PlayerStatus,
 			&i.Rating,
 			&i.Points,
+			&i.SinglesPoints,
+			&i.DoublesPoints,
 			&i.MatchesPlayed,
 			&i.Wins,
 			&i.Losses,
@@ -459,7 +487,7 @@ SET gender = COALESCE($1, gender),
     level = COALESCE($6, level),
     updated_at = now()
 WHERE user_id = $7
-RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 `
 
 type UpdateProfilePublicParams struct {
@@ -496,6 +524,8 @@ func (q *Queries) UpdateProfilePublic(ctx context.Context, arg UpdateProfilePubl
 		&i.PlayerStatus,
 		&i.Rating,
 		&i.Points,
+		&i.SinglesPoints,
+		&i.DoublesPoints,
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,

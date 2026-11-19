@@ -20,7 +20,7 @@ SET rating = $1,
     losses = losses + $5,
     updated_at = now()
 WHERE user_id = $6
-RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 `
 
 type ApplyProfileRatingDeltaParams struct {
@@ -55,6 +55,8 @@ func (q *Queries) ApplyProfileRatingDelta(ctx context.Context, arg ApplyProfileR
 		&i.PlayerStatus,
 		&i.Rating,
 		&i.Points,
+		&i.SinglesPoints,
+		&i.DoublesPoints,
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
@@ -200,13 +202,13 @@ func (q *Queries) InsertRankingRow(ctx context.Context, arg InsertRankingRowPara
 
 const insertRatingEvent = `-- name: InsertRatingEvent :one
 INSERT INTO rating_events (
-    player_id, match_id, tournament_id, kind,
+    player_id, match_id, tournament_id, kind, discipline,
     points_delta, rating_delta, rating_after, points_after,
     config_id, reason, created_by
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 )
-RETURNING id, player_id, match_id, tournament_id, kind, points_delta, rating_delta, rating_after, points_after, config_id, reason, created_by, created_at
+RETURNING id, player_id, match_id, tournament_id, kind, discipline, points_delta, rating_delta, rating_after, points_after, config_id, reason, created_by, created_at
 `
 
 type InsertRatingEventParams struct {
@@ -214,6 +216,7 @@ type InsertRatingEventParams struct {
 	MatchID      pgtype.UUID
 	TournamentID pgtype.UUID
 	Kind         RatingEventKind
+	Discipline   string
 	PointsDelta  int32
 	RatingDelta  float64
 	RatingAfter  float64
@@ -229,6 +232,7 @@ func (q *Queries) InsertRatingEvent(ctx context.Context, arg InsertRatingEventPa
 		arg.MatchID,
 		arg.TournamentID,
 		arg.Kind,
+		arg.Discipline,
 		arg.PointsDelta,
 		arg.RatingDelta,
 		arg.RatingAfter,
@@ -244,6 +248,7 @@ func (q *Queries) InsertRatingEvent(ctx context.Context, arg InsertRatingEventPa
 		&i.MatchID,
 		&i.TournamentID,
 		&i.Kind,
+		&i.Discipline,
 		&i.PointsDelta,
 		&i.RatingDelta,
 		&i.RatingAfter,
@@ -419,7 +424,7 @@ func (q *Queries) ListPreviousPositions(ctx context.Context, arg ListPreviousPos
 }
 
 const listRatingEventsByPlayer = `-- name: ListRatingEventsByPlayer :many
-SELECT id, player_id, match_id, tournament_id, kind,
+SELECT id, player_id, match_id, tournament_id, kind, discipline,
        points_delta, rating_delta, rating_after, points_after,
        config_id, reason, created_by, created_at
 FROM rating_events
@@ -448,6 +453,7 @@ func (q *Queries) ListRatingEventsByPlayer(ctx context.Context, arg ListRatingEv
 			&i.MatchID,
 			&i.TournamentID,
 			&i.Kind,
+			&i.Discipline,
 			&i.PointsDelta,
 			&i.RatingDelta,
 			&i.RatingAfter,
@@ -468,7 +474,7 @@ func (q *Queries) ListRatingEventsByPlayer(ctx context.Context, arg ListRatingEv
 }
 
 const listTournamentPointEventsInWindow = `-- name: ListTournamentPointEventsInWindow :many
-SELECT player_id, points_delta, tournament_id, created_at
+SELECT player_id, points_delta, tournament_id, discipline, created_at
 FROM rating_events
 WHERE kind = 'tournament'
   AND created_at >= $1
@@ -479,6 +485,7 @@ type ListTournamentPointEventsInWindowRow struct {
 	PlayerID     pgtype.UUID
 	PointsDelta  int32
 	TournamentID pgtype.UUID
+	Discipline   string
 	CreatedAt    pgtype.Timestamptz
 }
 
@@ -495,6 +502,7 @@ func (q *Queries) ListTournamentPointEventsInWindow(ctx context.Context, created
 			&i.PlayerID,
 			&i.PointsDelta,
 			&i.TournamentID,
+			&i.Discipline,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -509,7 +517,7 @@ func (q *Queries) ListTournamentPointEventsInWindow(ctx context.Context, created
 
 const lockProfileForUpdate = `-- name: LockProfileForUpdate :one
 SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
-       rating, points, matches_played, wins, losses, created_at, updated_at
+       rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
 WHERE user_id = $1
 FOR UPDATE
@@ -531,6 +539,8 @@ func (q *Queries) LockProfileForUpdate(ctx context.Context, userID pgtype.UUID) 
 		&i.PlayerStatus,
 		&i.Rating,
 		&i.Points,
+		&i.SinglesPoints,
+		&i.DoublesPoints,
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
@@ -582,7 +592,7 @@ const setProfilePoints = `-- name: SetProfilePoints :one
 UPDATE profiles
 SET points = $2, updated_at = now()
 WHERE user_id = $1
-RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 `
 
 type SetProfilePointsParams struct {
@@ -606,6 +616,51 @@ func (q *Queries) SetProfilePoints(ctx context.Context, arg SetProfilePointsPara
 		&i.PlayerStatus,
 		&i.Rating,
 		&i.Points,
+		&i.SinglesPoints,
+		&i.DoublesPoints,
+		&i.MatchesPlayed,
+		&i.Wins,
+		&i.Losses,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setProfilePointsBreakdown = `-- name: SetProfilePointsBreakdown :one
+UPDATE profiles
+SET singles_points = $1,
+    doubles_points = $2,
+    points = $1 + $2,
+    updated_at = now()
+WHERE user_id = $3
+RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+`
+
+type SetProfilePointsBreakdownParams struct {
+	SinglesPoints int32
+	DoublesPoints int32
+	UserID        pgtype.UUID
+}
+
+func (q *Queries) SetProfilePointsBreakdown(ctx context.Context, arg SetProfilePointsBreakdownParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, setProfilePointsBreakdown, arg.SinglesPoints, arg.DoublesPoints, arg.UserID)
+	var i Profile
+	err := row.Scan(
+		&i.UserID,
+		&i.Phone,
+		&i.Level,
+		&i.Slug,
+		&i.Gender,
+		&i.City,
+		&i.Bio,
+		&i.AvatarUrl,
+		&i.AvatarFileID,
+		&i.PlayerStatus,
+		&i.Rating,
+		&i.Points,
+		&i.SinglesPoints,
+		&i.DoublesPoints,
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,

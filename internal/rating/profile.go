@@ -17,10 +17,12 @@ func NewProfileParams(userID pgtype.UUID, phone pgtype.Text, level, firstName, l
 		Bio:           "",
 		AvatarUrl:     pgtype.Text{},
 		PlayerStatus:  "active",
-		Rating:        DefaultCoeffs.StartRating,
-		Points:        0,
-		MatchesPlayed: 0,
-		Wins:          0,
-		Losses:        0,
+		Rating:         DefaultCoeffs.StartRating,
+		Points:         0,
+		SinglesPoints:  0,
+		DoublesPoints:  0,
+		MatchesPlayed:  0,
+		Wins:           0,
+		Losses:         0,
 	}
 }

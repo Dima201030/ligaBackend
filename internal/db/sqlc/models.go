@@ -767,6 +767,8 @@ type Profile struct {
 	PlayerStatus  string
 	Rating        float64
 	Points        int32
+	SinglesPoints int32
+	DoublesPoints int32
 	MatchesPlayed int32
 	Wins          int32
 	Losses        int32
@@ -804,6 +806,7 @@ type RatingEvent struct {
 	MatchID      pgtype.UUID
 	TournamentID pgtype.UUID
 	Kind         RatingEventKind
+	Discipline   string
 	PointsDelta  int32
 	RatingDelta  float64
 	RatingAfter  float64

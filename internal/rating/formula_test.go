@@ -70,6 +70,39 @@ func TestEloEqualish(t *testing.T) {
 	}
 }
 
+func TestDisciplineFromTournamentType(t *testing.T) {
+	cases := map[string]string{
+		"singles": DisciplineSingles,
+		"cup":     DisciplineSingles,
+		"final":   DisciplineSingles,
+		"doubles": DisciplineDoubles,
+		"mixed":   DisciplineDoubles,
+		"teams":   DisciplineDoubles,
+		"":        DisciplineSingles,
+	}
+	for in, want := range cases {
+		if got := DisciplineFromTournamentType(in); got != want {
+			t.Fatalf("%q: got %s want %s", in, got, want)
+		}
+	}
+}
+
+func TestSplitBestWindowSums(t *testing.T) {
+	// 12 singles results → keep best 10; 7 doubles → keep best 5
+	singles := []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 5, 1}
+	doubles := []int{11, 22, 33, 44, 55, 66, 1}
+	br := SplitBestWindowSums(singles, doubles, DefaultCoeffs)
+	if br.Singles != 10+20+30+40+50+60+70+80+90+100 {
+		t.Fatalf("singles=%d", br.Singles)
+	}
+	if br.Doubles != 66+55+44+33+22 {
+		t.Fatalf("doubles=%d", br.Doubles)
+	}
+	if br.Total() != br.Singles+br.Doubles {
+		t.Fatalf("total mismatch")
+	}
+}
+
 func TestSelectBestSums(t *testing.T) {
 	vals := []int{10, 50, 30, 40, 5}
 	if got := SelectBestSums(vals, 3); got != 120 {

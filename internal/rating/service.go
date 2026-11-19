@@ -76,11 +76,16 @@ func ApplyMatchElo(ctx context.Context, q *sqlc.Queries, in MatchEloInput) error
 			k := KFactor(p.MatchesPlayed, in.Doubles, coeffs)
 			delta := EloDelta(p.Rating, opponentAvg, k, score)
 			after := ApplyEloFloor(p.Rating+delta, coeffs.MinRating)
+			disc := DisciplineSingles
+			if in.Doubles {
+				disc = DisciplineDoubles
+			}
 			if _, err := q.InsertRatingEvent(ctx, sqlc.InsertRatingEventParams{
 				PlayerID:     p.ID,
 				MatchID:      in.MatchID,
 				TournamentID: in.TournamentID,
 				Kind:         sqlc.RatingEventKindMatch,
+				Discipline:   disc,
 				PointsDelta:  0,
 				RatingDelta:  delta,
 				RatingAfter:  after,
@@ -117,6 +122,7 @@ type ManualInput struct {
 	Season      int32
 	PointsDelta int32
 	RatingDelta float64
+	Discipline  string // singles|doubles; default singles for points_delta
 	Reason      string
 	ActorID     pgtype.UUID
 }
@@ -144,16 +150,30 @@ func ApplyManual(ctx context.Context, store *db.Store, in ManualInput) (sqlc.Rat
 	if err != nil {
 		return sqlc.RatingEvent{}, err
 	}
-	newPoints := prof.Points + in.PointsDelta
-	if newPoints < 0 {
-		newPoints = 0
+	disc := NormalizeDiscipline(in.Discipline)
+	singles := prof.SinglesPoints
+	doubles := prof.DoublesPoints
+	if in.PointsDelta != 0 {
+		if disc == DisciplineDoubles {
+			doubles += in.PointsDelta
+			if doubles < 0 {
+				doubles = 0
+			}
+		} else {
+			singles += in.PointsDelta
+			if singles < 0 {
+				singles = 0
+			}
+		}
 	}
+	newPoints := singles + doubles
 	newRating := ApplyEloFloor(prof.Rating+in.RatingDelta, coeffs.MinRating)
 	ev, err := q.InsertRatingEvent(ctx, sqlc.InsertRatingEventParams{
 		PlayerID:     in.PlayerID,
 		MatchID:      pgtype.UUID{},
 		TournamentID: pgtype.UUID{},
 		Kind:         sqlc.RatingEventKindManual,
+		Discipline:   disc,
 		PointsDelta:  in.PointsDelta,
 		RatingDelta:  in.RatingDelta,
 		RatingAfter:  newRating,
@@ -163,6 +183,13 @@ func ApplyManual(ctx context.Context, store *db.Store, in ManualInput) (sqlc.Rat
 		CreatedBy:    in.ActorID,
 	})
 	if err != nil {
+		return sqlc.RatingEvent{}, err
+	}
+	if _, err := q.SetProfilePointsBreakdown(ctx, sqlc.SetProfilePointsBreakdownParams{
+		UserID:        in.PlayerID,
+		SinglesPoints: singles,
+		DoublesPoints: doubles,
+	}); err != nil {
 		return sqlc.RatingEvent{}, err
 	}
 	if _, err := q.ApplyProfileRatingDelta(ctx, sqlc.ApplyProfileRatingDeltaParams{
@@ -236,29 +263,39 @@ func ApplyTournamentPoints(ctx context.Context, store *db.Store, in TournamentAp
 			Category:     in.Category,
 			Type:         in.Type,
 		}, coeffs)
+		disc := DisciplineFromTournamentType(in.Type)
 		prof, err := q.LockProfileForUpdate(ctx, playerID)
 		if err != nil {
 			return 0, err
 		}
-		newPoints := prof.Points + int32(pts)
+		singles := prof.SinglesPoints
+		doubles := prof.DoublesPoints
+		if disc == DisciplineDoubles {
+			doubles += int32(pts)
+		} else {
+			singles += int32(pts)
+		}
+		newPoints := singles + doubles
 		if _, err := q.InsertRatingEvent(ctx, sqlc.InsertRatingEventParams{
 			PlayerID:     playerID,
 			MatchID:      pgtype.UUID{},
 			TournamentID: in.TournamentID,
 			Kind:         sqlc.RatingEventKindTournament,
+			Discipline:   disc,
 			PointsDelta:  int32(pts),
 			RatingDelta:  0,
 			RatingAfter:  prof.Rating,
 			PointsAfter:  newPoints,
 			ConfigID:     cfg.ID,
-			Reason:       fmt.Sprintf("tournament wins=%d", wins),
+			Reason:       fmt.Sprintf("tournament wins=%d discipline=%s", wins, disc),
 			CreatedBy:    in.ActorID,
 		}); err != nil {
 			return 0, err
 		}
-		if _, err := q.SetProfilePoints(ctx, sqlc.SetProfilePointsParams{
-			UserID: playerID,
-			Points: newPoints,
+		if _, err := q.SetProfilePointsBreakdown(ctx, sqlc.SetProfilePointsBreakdownParams{
+			UserID:        playerID,
+			SinglesPoints: singles,
+			DoublesPoints: doubles,
 		}); err != nil {
 			return 0, err
 		}
@@ -320,8 +357,8 @@ func Snapshot(ctx context.Context, store *db.Store, season int32) (time.Time, in
 			PreviousPosition: prev,
 			Points:           p.Points,
 			Rating:           p.Rating,
-			SinglesPoints:    p.Points, // split not tracked yet
-			DoublesPoints:    0,
+			SinglesPoints:    p.SinglesPoints,
+			DoublesPoints:    p.DoublesPoints,
 			Category:         p.Level,
 			CalculatedAt:     pgtype.Timestamptz{Time: calcAt, Valid: true},
 		}); err != nil {
