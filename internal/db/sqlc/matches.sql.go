@@ -406,6 +406,35 @@ func (q *Queries) ListConfirmedRegistrationsForBracket(ctx context.Context, tour
 	return items, nil
 }
 
+const listMatchIDsByPlayer = `-- name: ListMatchIDsByPlayer :many
+SELECT DISTINCT m.id
+FROM matches m
+JOIN match_sides ms ON ms.match_id = m.id
+WHERE m.status <> 'bye'
+  AND (ms.player_id = $1 OR ms.partner_id = $1)
+ORDER BY m.id
+`
+
+func (q *Queries) ListMatchIDsByPlayer(ctx context.Context, playerID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listMatchIDsByPlayer, playerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMatchSidesByMatchIDs = `-- name: ListMatchSidesByMatchIDs :many
 SELECT id, match_id, side, player_id, partner_id, registration_id, seed, label, is_bye
 FROM match_sides

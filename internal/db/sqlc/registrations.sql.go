@@ -161,6 +161,94 @@ func (q *Queries) GetRegistrationByTournamentPlayer(ctx context.Context, arg Get
 	return i, err
 }
 
+const listRegistrationsByPlayer = `-- name: ListRegistrationsByPlayer :many
+SELECT
+    r.id,
+    r.tournament_id,
+    r.player_id,
+    r.partner_id,
+    r.looking_for_partner,
+    r.status,
+    r.seed,
+    r.waitlist_position,
+    r.created_at,
+    r.confirmed_at,
+    r.cancelled_at,
+    t.slug AS tournament_slug,
+    t.title AS tournament_title,
+    t.starts_at AS tournament_starts_at,
+    t.entry_fee AS tournament_entry_fee,
+    t.status AS tournament_status,
+    partner_u.first_name AS partner_first_name,
+    partner_u.last_name AS partner_last_name
+FROM registrations r
+JOIN tournaments t ON t.id = r.tournament_id
+LEFT JOIN users partner_u ON partner_u.id = r.partner_id
+WHERE r.player_id = $1
+  AND r.status <> 'cancelled'
+ORDER BY t.starts_at ASC, r.created_at ASC
+`
+
+type ListRegistrationsByPlayerRow struct {
+	ID                 pgtype.UUID
+	TournamentID       pgtype.UUID
+	PlayerID           pgtype.UUID
+	PartnerID          pgtype.UUID
+	LookingForPartner  bool
+	Status             RegistrationStatus
+	Seed               pgtype.Int4
+	WaitlistPosition   pgtype.Int4
+	CreatedAt          pgtype.Timestamptz
+	ConfirmedAt        pgtype.Timestamptz
+	CancelledAt        pgtype.Timestamptz
+	TournamentSlug     string
+	TournamentTitle    string
+	TournamentStartsAt pgtype.Timestamptz
+	TournamentEntryFee int32
+	TournamentStatus   TournamentStatus
+	PartnerFirstName   pgtype.Text
+	PartnerLastName    pgtype.Text
+}
+
+func (q *Queries) ListRegistrationsByPlayer(ctx context.Context, playerID pgtype.UUID) ([]ListRegistrationsByPlayerRow, error) {
+	rows, err := q.db.Query(ctx, listRegistrationsByPlayer, playerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRegistrationsByPlayerRow{}
+	for rows.Next() {
+		var i ListRegistrationsByPlayerRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TournamentID,
+			&i.PlayerID,
+			&i.PartnerID,
+			&i.LookingForPartner,
+			&i.Status,
+			&i.Seed,
+			&i.WaitlistPosition,
+			&i.CreatedAt,
+			&i.ConfirmedAt,
+			&i.CancelledAt,
+			&i.TournamentSlug,
+			&i.TournamentTitle,
+			&i.TournamentStartsAt,
+			&i.TournamentEntryFee,
+			&i.TournamentStatus,
+			&i.PartnerFirstName,
+			&i.PartnerLastName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRegistrationsByTournament = `-- name: ListRegistrationsByTournament :many
 SELECT
     r.id,

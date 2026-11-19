@@ -254,15 +254,6 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": sessionUserJSON(user)})
-}
-
 func (s *Server) handleConfirmEmail(w http.ResponseWriter, r *http.Request) {
 	token := ""
 	if r.Method == http.MethodGet {

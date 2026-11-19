@@ -218,3 +218,11 @@ ORDER BY
     END,
     m.scheduled_at ASC NULLS LAST,
     m.created_at ASC;
+
+-- name: ListMatchIDsByPlayer :many
+SELECT DISTINCT m.id
+FROM matches m
+JOIN match_sides ms ON ms.match_id = m.id
+WHERE m.status <> 'bye'
+  AND (ms.player_id = $1 OR ms.partner_id = $1)
+ORDER BY m.id;

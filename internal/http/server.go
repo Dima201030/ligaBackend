@@ -78,6 +78,8 @@ func NewWithOptions(opts Options) *Server {
 		r.Post("/forgot-password", s.handleForgotPassword)
 		r.Post("/reset-password", s.handleResetPassword)
 		r.With(s.requireAuth).Get("/me", s.handleMe)
+		r.With(s.requireAuth, s.requireApproved).Get("/me/registrations", s.handleMyRegistrations)
+		r.With(s.requireAuth, s.requireApproved).Get("/me/matches", s.handleMyMatches)
 	})
 
 	s.router.Get("/api/tournaments", s.handleListPublicTournaments)

@@ -101,3 +101,30 @@ SELECT id, email, password_hash, first_name, last_name, role, status,
        email_verified_at, created_at, updated_at
 FROM users
 WHERE id = $1 AND status = 'approved';
+
+-- name: ListRegistrationsByPlayer :many
+SELECT
+    r.id,
+    r.tournament_id,
+    r.player_id,
+    r.partner_id,
+    r.looking_for_partner,
+    r.status,
+    r.seed,
+    r.waitlist_position,
+    r.created_at,
+    r.confirmed_at,
+    r.cancelled_at,
+    t.slug AS tournament_slug,
+    t.title AS tournament_title,
+    t.starts_at AS tournament_starts_at,
+    t.entry_fee AS tournament_entry_fee,
+    t.status AS tournament_status,
+    partner_u.first_name AS partner_first_name,
+    partner_u.last_name AS partner_last_name
+FROM registrations r
+JOIN tournaments t ON t.id = r.tournament_id
+LEFT JOIN users partner_u ON partner_u.id = r.partner_id
+WHERE r.player_id = $1
+  AND r.status <> 'cancelled'
+ORDER BY t.starts_at ASC, r.created_at ASC;
