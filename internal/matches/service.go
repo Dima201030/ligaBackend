@@ -403,13 +403,14 @@ func Publish(ctx context.Context, store *db.Store, tournamentID, actorID pgtype.
 // FinishOutcome is the result of submitting a score or walkover.
 type FinishOutcome struct {
 	Match               sqlc.Match
+	TournamentWentLive  bool
 	TournamentCompleted bool
 	RatingsApplied      int
 }
 
 // SubmitScore records a set score and advances the winner (and loser to 3rd place if wired).
-// When the championship final is finished, the tournament is set to completed and
-// tournament rating points are awarded (idempotent).
+// First finished match promotes pending tournaments to live. Championship final
+// (or last round-robin match) sets completed and awards tournament points.
 func SubmitScore(ctx context.Context, store *db.Store, in ScoreInput) (FinishOutcome, error) {
 	winner, text, err := ValidateAndDecideWinner(in.Sets)
 	if err != nil {
@@ -544,13 +545,27 @@ func finishMatch(ctx context.Context, store *db.Store, in finishParams) (FinishO
 	}
 
 	out := FinishOutcome{Match: updated}
-	if isChampionshipFinal(match) {
-		tour, err := maybeCompleteAndAward(ctx, q, match.TournamentID, in.ActorID)
+	tour, err := q.GetTournamentByID(ctx, match.TournamentID)
+	if err != nil {
+		return FinishOutcome{}, err
+	}
+	shouldComplete, err := shouldCompleteAfterFinish(ctx, q, match, tour.Format)
+	if err != nil {
+		return FinishOutcome{}, err
+	}
+	if shouldComplete {
+		res, err := maybeCompleteAndAward(ctx, q, match.TournamentID, in.ActorID)
 		if err != nil {
 			return FinishOutcome{}, err
 		}
-		out.TournamentCompleted = tour.completed
-		out.RatingsApplied = tour.ratingsApplied
+		out.TournamentCompleted = res.completed
+		out.RatingsApplied = res.ratingsApplied
+	} else {
+		live, err := maybeMarkLive(ctx, q, match.TournamentID)
+		if err != nil {
+			return FinishOutcome{}, err
+		}
+		out.TournamentWentLive = live
 	}
 
 	diff := in.AuditDiff
@@ -560,6 +575,7 @@ func finishMatch(ctx context.Context, store *db.Store, in finishParams) (FinishO
 			"winner_side":          in.WinnerSide,
 			"score":                in.ScoreText,
 			"version":              in.Version,
+			"tournament_went_live":  out.TournamentWentLive,
 			"tournament_completed": out.TournamentCompleted,
 			"ratings_applied":      out.RatingsApplied,
 		})
@@ -578,9 +594,10 @@ func finishMatch(ctx context.Context, store *db.Store, in finishParams) (FinishO
 	return out, nil
 }
 
-// isChampionshipFinal reports whether finishing this match crowns a tournament winner.
+// isChampionshipFinal reports whether finishing this match crowns a knockout winner.
 // Olympic/playoff final: main|playoff with no next match. Double-elim: grand_final.
 // Third-place, lower-bracket, and group matches are never finals.
+// Round-robin must not use this — every RR match has no next_match_id.
 func isChampionshipFinal(m sqlc.Match) bool {
 	switch m.Stage {
 	case "grand_final":
@@ -594,9 +611,31 @@ func isChampionshipFinal(m sqlc.Match) bool {
 	}
 }
 
+func shouldCompleteAfterFinish(ctx context.Context, q *sqlc.Queries, m sqlc.Match, format sqlc.TournamentFormat) (bool, error) {
+	if format == sqlc.TournamentFormatRoundRobin {
+		open, err := q.CountOpenPlayableMatches(ctx, m.TournamentID)
+		if err != nil {
+			return false, err
+		}
+		return open == 0, nil
+	}
+	return isChampionshipFinal(m), nil
+}
+
 type completeAwardResult struct {
 	completed      bool
 	ratingsApplied int
+}
+
+func maybeMarkLive(ctx context.Context, q *sqlc.Queries, tournamentID pgtype.UUID) (bool, error) {
+	_, err := q.MarkTournamentLiveIfPending(ctx, tournamentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func maybeCompleteAndAward(ctx context.Context, q *sqlc.Queries, tournamentID, actorID pgtype.UUID) (completeAwardResult, error) {

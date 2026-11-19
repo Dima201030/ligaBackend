@@ -94,6 +94,29 @@ func (q *Queries) ClearMatchSidePlayers(ctx context.Context, arg ClearMatchSideP
 	return i, err
 }
 
+const countOpenPlayableMatches = `-- name: CountOpenPlayableMatches :one
+SELECT COUNT(*)::int AS count
+FROM matches m
+WHERE m.tournament_id = $1
+  AND m.is_bye = false
+  AND m.status IN ('scheduled', 'live')
+  AND EXISTS (
+      SELECT 1 FROM match_sides s1
+      WHERE s1.match_id = m.id AND s1.side = 1 AND s1.player_id IS NOT NULL
+  )
+  AND EXISTS (
+      SELECT 1 FROM match_sides s2
+      WHERE s2.match_id = m.id AND s2.side = 2 AND s2.player_id IS NOT NULL
+  )
+`
+
+func (q *Queries) CountOpenPlayableMatches(ctx context.Context, tournamentID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countOpenPlayableMatches, tournamentID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countResultMatches = `-- name: CountResultMatches :one
 SELECT COUNT(*)::int AS count
 FROM matches

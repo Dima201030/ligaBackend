@@ -185,6 +185,16 @@ func TestGenerateByeAndScoreAdvance(t *testing.T) {
 	if outcome.TournamentCompleted {
 		t.Fatal("first-round match must not complete the tournament")
 	}
+	if !outcome.TournamentWentLive {
+		t.Fatal("first finished match should promote tournament to live")
+	}
+	liveTour, err := store.Queries.GetTournamentByID(ctx, tour.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if liveTour.Status != sqlc.TournamentStatusLive {
+		t.Fatalf("status=%s want live", liveTour.Status)
+	}
 
 	if !playable.NextMatchID.Valid {
 		t.Fatal("expected next match")
@@ -420,5 +430,125 @@ func TestFinalScoreCompletesTournamentAndAwards(t *testing.T) {
 	})
 	if err != matches.ErrConflict {
 		t.Fatalf("re-finish expected conflict, got %v outcome=%+v", err, outcome2)
+	}
+}
+
+func TestRoundRobinCompletesWhenAllMatchesClosed(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	slug := fmt.Sprintf("rr-%d", time.Now().UnixNano())
+	now := time.Now().UTC()
+	tour, err := store.Queries.CreateTournament(ctx, sqlc.CreateTournamentParams{
+		Slug:                 slug,
+		Title:                "RR " + slug,
+		Description:          "rr",
+		Type:                 sqlc.TournamentTypeSingles,
+		Category:             "futures",
+		Surface:              sqlc.SurfaceTypeHard,
+		Format:               sqlc.TournamentFormatRoundRobin,
+		Status:               sqlc.TournamentStatusRegistrationOpen,
+		StartsAt:             pgtype.Timestamptz{Time: now.Add(48 * time.Hour), Valid: true},
+		EndsAt:               pgtype.Timestamptz{},
+		RegistrationOpensAt:  pgtype.Timestamptz{Time: now.Add(-time.Hour), Valid: true},
+		RegistrationClosesAt: pgtype.Timestamptz{Time: now.Add(24 * time.Hour), Valid: true},
+		VenueName:            "Test",
+		VenueAddress:         "Test",
+		VenueCourts:          2,
+		VenueSurface:         sqlc.SurfaceTypeHard,
+		EntryFee:             0,
+		MaxParticipants:      4,
+		CoverUrl:             pgtype.Text{},
+		Season:               int32(now.Year()),
+		CreatedBy:            pgtype.UUID{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmPlayers(t, store, tour.ID, 3, slug)
+	actor := createPlayer(t, store, fmt.Sprintf("org-%s@test.local", slug))
+
+	if _, _, err := matches.Generate(ctx, store, matches.GenerateInput{
+		TournamentID: tour.ID,
+		Seeding:      "seed",
+		ActorID:      actor,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := matches.Publish(ctx, store, tour.ID, actor); err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := store.Queries.ListMatchesByTournament(ctx, tour.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	playable := make([]sqlc.Match, 0, len(all))
+	for _, m := range all {
+		if m.IsBye || m.Status != sqlc.MatchStatusScheduled {
+			continue
+		}
+		sides, err := store.Queries.ListMatchSidesByMatchIDs(ctx, []pgtype.UUID{m.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ok := len(sides) == 2
+		for _, s := range sides {
+			if !s.PlayerID.Valid {
+				ok = false
+			}
+		}
+		if ok {
+			playable = append(playable, m)
+		}
+	}
+	if len(playable) < 2 {
+		t.Fatalf("expected several RR matches, got %d", len(playable))
+	}
+
+	var last matches.FinishOutcome
+	for i, m := range playable {
+		// Refresh version in case of earlier updates (shouldn't change until scored).
+		cur, err := store.Queries.GetMatchByID(ctx, m.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := matches.SubmitScore(ctx, store, matches.ScoreInput{
+			MatchID: cur.ID,
+			Sets: []matches.SetScore{
+				{Side1: 6, Side2: 3},
+				{Side1: 6, Side2: 4},
+			},
+			Version: cur.Version,
+			ActorID: actor,
+		})
+		if err != nil {
+			t.Fatalf("match %d: %v", i, err)
+		}
+		last = out
+		if i < len(playable)-1 {
+			if out.TournamentCompleted {
+				t.Fatalf("match %d/%d completed tournament early", i+1, len(playable))
+			}
+			got, err := store.Queries.GetTournamentByID(ctx, tour.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != sqlc.TournamentStatusLive {
+				t.Fatalf("after match %d status=%s want live", i+1, got.Status)
+			}
+		}
+	}
+	if !last.TournamentCompleted {
+		t.Fatal("last RR match should complete tournament")
+	}
+	if last.RatingsApplied < 1 {
+		t.Fatalf("ratings_applied=%d", last.RatingsApplied)
+	}
+	got, err := store.Queries.GetTournamentByID(ctx, tour.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != sqlc.TournamentStatusCompleted {
+		t.Fatalf("status=%s", got.Status)
 	}
 }

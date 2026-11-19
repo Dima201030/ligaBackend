@@ -54,6 +54,19 @@ WHERE id = $1
   AND status NOT IN ('completed', 'cancelled', 'draft')
 RETURNING *;
 
+-- name: MarkTournamentLiveIfPending :one
+UPDATE tournaments
+SET status = 'live',
+    updated_at = now()
+WHERE id = $1
+  AND status IN (
+      'registration_soon',
+      'registration_open',
+      'registration_closed',
+      'scheduled'
+  )
+RETURNING *;
+
 -- name: ListPublicTournaments :many
 SELECT * FROM tournaments
 WHERE status <> 'draft'

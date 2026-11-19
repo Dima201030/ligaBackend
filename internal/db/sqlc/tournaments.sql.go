@@ -461,6 +461,57 @@ func (q *Queries) LockTournamentByID(ctx context.Context, id pgtype.UUID) (Tourn
 	return i, err
 }
 
+const markTournamentLiveIfPending = `-- name: MarkTournamentLiveIfPending :one
+UPDATE tournaments
+SET status = 'live',
+    updated_at = now()
+WHERE id = $1
+  AND status IN (
+      'registration_soon',
+      'registration_open',
+      'registration_closed',
+      'scheduled'
+  )
+RETURNING id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
+`
+
+func (q *Queries) MarkTournamentLiveIfPending(ctx context.Context, id pgtype.UUID) (Tournament, error) {
+	row := q.db.QueryRow(ctx, markTournamentLiveIfPending, id)
+	var i Tournament
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.Description,
+		&i.Type,
+		&i.Category,
+		&i.Surface,
+		&i.Format,
+		&i.Status,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.RegistrationOpensAt,
+		&i.RegistrationClosesAt,
+		&i.VenueName,
+		&i.VenueAddress,
+		&i.VenueCourts,
+		&i.VenueSurface,
+		&i.EntryFee,
+		&i.MaxParticipants,
+		&i.CoverUrl,
+		&i.CoverFileID,
+		&i.Season,
+		&i.CreatedBy,
+		&i.BracketStatus,
+		&i.BracketPublishedAt,
+		&i.BracketVersion,
+		&i.BracketThirdPlace,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const nextRuleVersion = `-- name: NextRuleVersion :one
 SELECT COALESCE(MAX(version), 0) + 1 AS next_version
 FROM tournament_rule_versions

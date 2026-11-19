@@ -310,6 +310,9 @@ func (s *Server) handleSubmitScore(w http.ResponseWriter, r *http.Request) {
 	} else {
 		resp["match"] = list[0]
 	}
+	if outcome.TournamentWentLive {
+		resp["tournament_went_live"] = true
+	}
 	if outcome.TournamentCompleted {
 		resp["tournament_completed"] = true
 		resp["ratings_applied"] = outcome.RatingsApplied
@@ -350,6 +353,9 @@ func (s *Server) handleWalkover(w http.ResponseWriter, r *http.Request) {
 		resp["match"] = matchFromRow(outcome.Match, nil, nil)
 	} else {
 		resp["match"] = list[0]
+	}
+	if outcome.TournamentWentLive {
+		resp["tournament_went_live"] = true
 	}
 	if outcome.TournamentCompleted {
 		resp["tournament_completed"] = true

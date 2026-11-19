@@ -350,14 +350,25 @@ func BuildRoundRobin(entries []Entry, idPrefix string) []Round {
 			if first == nil && second == nil {
 				continue
 			}
-			matches = append(matches, Match{
+			m := Match{
 				ID:         fmt.Sprintf("%sR%dM%d", idPrefix, round+1, index+1),
 				RoundIndex: round,
 				Position:   index,
 				Stage:      "main",
 				Slot1:      entrySlot(first),
 				Slot2:      entrySlot(second),
-			})
+			}
+			// Odd entry counts insert a bye slot; treat as automatic advance.
+			hasFirst := hasPlayer(m.Slot1)
+			hasSecond := hasPlayer(m.Slot2)
+			if hasFirst && !hasSecond {
+				m.AutomaticWinner = 1
+				m.Slot2 = Slot{IsBye: true, Placeholder: "Пропуск"}
+			} else if !hasFirst && hasSecond {
+				m.AutomaticWinner = 2
+				m.Slot1 = Slot{IsBye: true, Placeholder: "Пропуск"}
+			}
+			matches = append(matches, m)
 		}
 		rounds = append(rounds, Round{
 			Index:   round,

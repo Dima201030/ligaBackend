@@ -23,6 +23,8 @@ func TestIsChampionshipFinal(t *testing.T) {
 		{"group", sqlc.Match{Stage: "group"}, false},
 		{"playoff final", sqlc.Match{Stage: "playoff"}, true},
 		{"playoff SF", sqlc.Match{Stage: "playoff", NextMatchID: next}, false},
+		// RR matches look like finals by stage/next; format gate is separate.
+		{"rr-looking main", sqlc.Match{Stage: "main"}, true},
 	}
 	for _, tc := range cases {
 		if got := isChampionshipFinal(tc.m); got != tc.want {
