@@ -69,7 +69,7 @@ RETURNING *;
 UPDATE profiles
 SET singles_points = sqlc.arg(singles_points),
     doubles_points = sqlc.arg(doubles_points),
-    points = sqlc.arg(singles_points) + sqlc.arg(doubles_points),
+    points = sqlc.arg(singles_points)::int + sqlc.arg(doubles_points)::int,
     updated_at = now()
 WHERE user_id = sqlc.arg(user_id)
 RETURNING *;
@@ -132,7 +132,7 @@ WHERE m.tournament_id = $1
   AND m.status IN ('completed', 'walkover')
   AND m.is_bye = false
   AND ms.side = m.winner_side
-  AND ms.player_id = $2;
+  AND (ms.player_id = $2 OR ms.partner_id = $2);
 
 -- name: CountConfirmedParticipants :one
 SELECT COUNT(*)::int AS count
@@ -140,6 +140,15 @@ FROM registrations
 WHERE tournament_id = $1 AND status = 'confirmed';
 
 -- name: ListConfirmedPlayerIDs :many
-SELECT player_id
-FROM registrations
-WHERE tournament_id = $1 AND status = 'confirmed';
+SELECT DISTINCT pid AS player_id
+FROM (
+    SELECT r.player_id AS pid
+    FROM registrations r
+    WHERE r.tournament_id = $1 AND r.status = 'confirmed'
+    UNION ALL
+    SELECT r.partner_id AS pid
+    FROM registrations r
+    WHERE r.tournament_id = $1
+      AND r.status = 'confirmed'
+      AND r.partner_id IS NOT NULL
+) AS players;

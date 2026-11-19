@@ -217,15 +217,26 @@ type TournamentApplyInput struct {
 	ActorID      pgtype.UUID
 }
 
-// ApplyTournamentPoints awards points once per player (idempotent).
+// ApplyTournamentPoints awards points once per player in its own transaction (idempotent).
 func ApplyTournamentPoints(ctx context.Context, store *db.Store, in TournamentApplyInput) (int, error) {
 	tx, err := store.Pool.Begin(ctx)
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
-	q := store.Queries.WithTx(tx)
+	n, err := ApplyTournamentPointsTx(ctx, store.Queries.WithTx(tx), in)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
 
+// ApplyTournamentPointsTx awards tournament points using an existing queries/tx handle.
+// Idempotent per (tournament, player). Safe to call on every transition into completed.
+func ApplyTournamentPointsTx(ctx context.Context, q *sqlc.Queries, in TournamentApplyInput) (int, error) {
 	cfg, coeffs, err := loadConfig(ctx, q, in.Season)
 	if err != nil {
 		return 0, err
@@ -239,6 +250,7 @@ func ApplyTournamentPoints(ctx context.Context, store *db.Store, in TournamentAp
 		return 0, err
 	}
 	applied := 0
+	disc := DisciplineFromTournamentType(in.Type)
 	for _, playerID := range players {
 		exists, err := q.RatingEventExistsForTournament(ctx, sqlc.RatingEventExistsForTournamentParams{
 			TournamentID: in.TournamentID,
@@ -263,7 +275,6 @@ func ApplyTournamentPoints(ctx context.Context, store *db.Store, in TournamentAp
 			Category:     in.Category,
 			Type:         in.Type,
 		}, coeffs)
-		disc := DisciplineFromTournamentType(in.Type)
 		prof, err := q.LockProfileForUpdate(ctx, playerID)
 		if err != nil {
 			return 0, err
@@ -300,9 +311,6 @@ func ApplyTournamentPoints(ctx context.Context, store *db.Store, in TournamentAp
 			return 0, err
 		}
 		applied++
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return 0, err
 	}
 	return applied, nil
 }

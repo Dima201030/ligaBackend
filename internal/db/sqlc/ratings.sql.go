@@ -88,7 +88,7 @@ WHERE m.tournament_id = $1
   AND m.status IN ('completed', 'walkover')
   AND m.is_bye = false
   AND ms.side = m.winner_side
-  AND ms.player_id = $2
+  AND (ms.player_id = $2 OR ms.partner_id = $2)
 `
 
 type CountMainDrawWinsParams struct {
@@ -277,9 +277,18 @@ func (q *Queries) LatestRankingCalculatedAt(ctx context.Context, season int32) (
 }
 
 const listConfirmedPlayerIDs = `-- name: ListConfirmedPlayerIDs :many
-SELECT player_id
-FROM registrations
-WHERE tournament_id = $1 AND status = 'confirmed'
+SELECT DISTINCT pid AS player_id
+FROM (
+    SELECT r.player_id AS pid
+    FROM registrations r
+    WHERE r.tournament_id = $1 AND r.status = 'confirmed'
+    UNION ALL
+    SELECT r.partner_id AS pid
+    FROM registrations r
+    WHERE r.tournament_id = $1
+      AND r.status = 'confirmed'
+      AND r.partner_id IS NOT NULL
+) AS players
 `
 
 func (q *Queries) ListConfirmedPlayerIDs(ctx context.Context, tournamentID pgtype.UUID) ([]pgtype.UUID, error) {
@@ -631,7 +640,7 @@ const setProfilePointsBreakdown = `-- name: SetProfilePointsBreakdown :one
 UPDATE profiles
 SET singles_points = $1,
     doubles_points = $2,
-    points = $1 + $2,
+    points = $1::int + $2::int,
     updated_at = now()
 WHERE user_id = $3
 RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at

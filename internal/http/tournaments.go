@@ -12,6 +12,7 @@ import (
 
 	"github.com/Dima201030/ligaBackend/internal/auth"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
+	"github.com/Dima201030/ligaBackend/internal/rating"
 	"github.com/Dima201030/ligaBackend/internal/tournaments"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -322,14 +323,36 @@ func (s *Server) handleCreateTournament(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	var awarded int
+	if tour.Status == sqlc.TournamentStatusCompleted {
+		n, err := rating.ApplyTournamentPointsTx(ctx, q, rating.TournamentApplyInput{
+			TournamentID: tour.ID,
+			Season:       tour.Season,
+			Category:     tour.Category,
+			Type:         string(tour.Type),
+			ActorID:      actor.ID,
+		})
+		if err != nil {
+			if errors.Is(err, rating.ErrConfigNotFound) {
+				writeError(w, http.StatusConflict, "config_missing", "Нет конфигурации рейтинга для сезона — турнир не создан")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось начислить очки рейтинга")
+			return
+		}
+		awarded = n
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось создать турнир")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"tournament": tournamentFromRow(tour, parsed.regulations),
-	})
+	resp := map[string]any{"tournament": tournamentFromRow(tour, parsed.regulations)}
+	if tour.Status == sqlc.TournamentStatusCompleted {
+		resp["ratings_applied"] = awarded
+	}
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (s *Server) handleUpdateTournament(w http.ResponseWriter, r *http.Request) {
@@ -439,13 +462,37 @@ func (s *Server) handleUpdateTournament(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	var awarded int
+	if before.Status != sqlc.TournamentStatusCompleted && tour.Status == sqlc.TournamentStatusCompleted {
+		n, err := rating.ApplyTournamentPointsTx(ctx, q, rating.TournamentApplyInput{
+			TournamentID: tour.ID,
+			Season:       tour.Season,
+			Category:     tour.Category,
+			Type:         string(tour.Type),
+			ActorID:      actor.ID,
+		})
+		if err != nil {
+			if errors.Is(err, rating.ErrConfigNotFound) {
+				writeError(w, http.StatusConflict, "config_missing", "Нет конфигурации рейтинга для сезона — статус не сохранён")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось начислить очки рейтинга")
+			return
+		}
+		awarded = n
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось обновить турнир")
 		return
 	}
 
 	regs, _ := s.latestRegulations(r, tour.ID)
-	writeJSON(w, http.StatusOK, map[string]any{"tournament": tournamentFromRow(tour, regs)})
+	resp := map[string]any{"tournament": tournamentFromRow(tour, regs)}
+	if before.Status != sqlc.TournamentStatusCompleted && tour.Status == sqlc.TournamentStatusCompleted {
+		resp["ratings_applied"] = awarded
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleCreateRegistration(w http.ResponseWriter, r *http.Request) {
