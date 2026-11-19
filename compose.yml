@@ -76,11 +76,13 @@ services:
     environment:
       DATABASE_URL: postgres://liga:liga@db:5432/liga?sslmode=disable
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY in .env}
-      SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST to enable mailworker}
+      # Required at runtime by mailworker binary; defaults empty so compose
+      # interpolate works when profile "smtp" is unused.
+      SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM: ${SMTP_FROM:?set SMTP_FROM to enable mailworker}
+      SMTP_FROM: ${SMTP_FROM:-}
       MAIL_POLL_SECONDS: ${MAIL_POLL_SECONDS:-15}
       MAIL_BATCH_SIZE: ${MAIL_BATCH_SIZE:-20}
 
