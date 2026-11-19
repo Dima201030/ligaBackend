@@ -37,11 +37,37 @@ func TestTournamentPointsExamples(t *testing.T) {
 		{"winner challenger doubles 16", TournamentPointsInput{Wins: 4, Participants: 16, Category: "challenger", Type: "doubles"}, 312},
 		{"winner masters final 8", TournamentPointsInput{Wins: 3, Participants: 8, Category: "masters", Type: "final"}, 356},
 		{"semifinal rookies 8", TournamentPointsInput{Wins: 1, Participants: 8, Category: "rookies", Type: "singles"}, 42},
+		{"consolation futures 16 2wins", TournamentPointsInput{Wins: 2, Participants: 16, Category: "futures", Type: "singles", Consolation: true}, 68},
+		{"walkover-only winner futures 16", TournamentPointsInput{Wins: 4, Participants: 16, Category: "futures", Type: "singles", WalkoverOnly: true}, 150},
+		{"consolation+walkover", TournamentPointsInput{Wins: 2, Participants: 16, Category: "futures", Type: "singles", Consolation: true, WalkoverOnly: true}, 34},
 	}
 	for _, tc := range cases {
 		got := TournamentPoints(tc.in, c)
 		if got != tc.want {
 			t.Fatalf("%s: got %d want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestAwardFromWinStats(t *testing.T) {
+	cases := []struct {
+		name                    string
+		stats                   WinStats
+		wins                    int
+		consolation, walkoverOnly bool
+	}{
+		{"primary preferred", WinStats{PrimaryWins: 2, ConsolationWins: 3}, 2, false, false},
+		{"primary all walkover", WinStats{PrimaryWins: 2, PrimaryWalkoverWins: 2}, 2, false, true},
+		{"primary mixed walkover", WinStats{PrimaryWins: 2, PrimaryWalkoverWins: 1}, 2, false, false},
+		{"consolation only", WinStats{ConsolationWins: 3}, 3, true, false},
+		{"consolation walkover only", WinStats{ConsolationWins: 2, ConsolationWalkoverWins: 2}, 2, true, true},
+		{"no wins", WinStats{}, 0, false, false},
+	}
+	for _, tc := range cases {
+		w, c, wo := AwardFromWinStats(tc.stats)
+		if w != tc.wins || c != tc.consolation || wo != tc.walkoverOnly {
+			t.Fatalf("%s: got wins=%d consol=%v wo=%v want %d %v %v",
+				tc.name, w, c, wo, tc.wins, tc.consolation, tc.walkoverOnly)
 		}
 	}
 }

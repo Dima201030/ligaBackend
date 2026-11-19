@@ -84,7 +84,7 @@ SELECT COUNT(*)::int AS wins
 FROM matches m
 JOIN match_sides ms ON ms.match_id = m.id
 WHERE m.tournament_id = $1
-  AND m.stage = 'main'
+  AND m.stage IN ('main', 'playoff', 'grand_final')
   AND m.status IN ('completed', 'walkover')
   AND m.is_bye = false
   AND ms.side = m.winner_side
@@ -96,6 +96,7 @@ type CountMainDrawWinsParams struct {
 	PlayerID     pgtype.UUID
 }
 
+// Primary draw: main + playoff + grand_final (not group / lower / third_place).
 func (q *Queries) CountMainDrawWins(ctx context.Context, arg CountMainDrawWinsParams) (int32, error) {
 	row := q.db.QueryRow(ctx, countMainDrawWins, arg.TournamentID, arg.PlayerID)
 	var wins int32
@@ -122,6 +123,56 @@ func (q *Queries) GetLatestRatingConfig(ctx context.Context, season int32) (Rati
 		&i.ActiveFrom,
 		&i.CreatedBy,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getPlayerTournamentWinStats = `-- name: GetPlayerTournamentWinStats :one
+SELECT
+    COUNT(*) FILTER (
+        WHERE m.stage IN ('main', 'playoff', 'grand_final')
+          AND m.status IN ('completed', 'walkover')
+    )::int AS primary_wins,
+    COUNT(*) FILTER (
+        WHERE m.stage IN ('main', 'playoff', 'grand_final')
+          AND m.status = 'walkover'
+    )::int AS primary_walkover_wins,
+    COUNT(*) FILTER (
+        WHERE m.stage IN ('lower', 'consolation')
+          AND m.status IN ('completed', 'walkover')
+    )::int AS consolation_wins,
+    COUNT(*) FILTER (
+        WHERE m.stage IN ('lower', 'consolation')
+          AND m.status = 'walkover'
+    )::int AS consolation_walkover_wins
+FROM matches m
+JOIN match_sides ms ON ms.match_id = m.id
+WHERE m.tournament_id = $1
+  AND m.is_bye = false
+  AND ms.side = m.winner_side
+  AND (ms.player_id = $2 OR ms.partner_id = $2)
+`
+
+type GetPlayerTournamentWinStatsParams struct {
+	TournamentID pgtype.UUID
+	PlayerID     pgtype.UUID
+}
+
+type GetPlayerTournamentWinStatsRow struct {
+	PrimaryWins             int32
+	PrimaryWalkoverWins     int32
+	ConsolationWins         int32
+	ConsolationWalkoverWins int32
+}
+
+func (q *Queries) GetPlayerTournamentWinStats(ctx context.Context, arg GetPlayerTournamentWinStatsParams) (GetPlayerTournamentWinStatsRow, error) {
+	row := q.db.QueryRow(ctx, getPlayerTournamentWinStats, arg.TournamentID, arg.PlayerID)
+	var i GetPlayerTournamentWinStatsRow
+	err := row.Scan(
+		&i.PrimaryWins,
+		&i.PrimaryWalkoverWins,
+		&i.ConsolationWins,
+		&i.ConsolationWalkoverWins,
 	)
 	return i, err
 }

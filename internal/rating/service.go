@@ -262,18 +262,26 @@ func ApplyTournamentPointsTx(ctx context.Context, q *sqlc.Queries, in Tournament
 		if exists {
 			continue
 		}
-		wins, err := q.CountMainDrawWins(ctx, sqlc.CountMainDrawWinsParams{
+		rawStats, err := q.GetPlayerTournamentWinStats(ctx, sqlc.GetPlayerTournamentWinStatsParams{
 			TournamentID: in.TournamentID,
 			PlayerID:     playerID,
 		})
 		if err != nil {
 			return 0, err
 		}
+		wins, consolation, walkoverOnly := AwardFromWinStats(WinStats{
+			PrimaryWins:             int(rawStats.PrimaryWins),
+			PrimaryWalkoverWins:     int(rawStats.PrimaryWalkoverWins),
+			ConsolationWins:         int(rawStats.ConsolationWins),
+			ConsolationWalkoverWins: int(rawStats.ConsolationWalkoverWins),
+		})
 		pts := TournamentPoints(TournamentPointsInput{
-			Wins:         int(wins),
+			Wins:         wins,
 			Participants: int(participants),
 			Category:     in.Category,
 			Type:         in.Type,
+			Consolation:  consolation,
+			WalkoverOnly: walkoverOnly,
 		}, coeffs)
 		prof, err := q.LockProfileForUpdate(ctx, playerID)
 		if err != nil {
@@ -298,8 +306,11 @@ func ApplyTournamentPointsTx(ctx context.Context, q *sqlc.Queries, in Tournament
 			RatingAfter:  prof.Rating,
 			PointsAfter:  newPoints,
 			ConfigID:     cfg.ID,
-			Reason:       fmt.Sprintf("tournament wins=%d discipline=%s", wins, disc),
-			CreatedBy:    in.ActorID,
+			Reason: fmt.Sprintf(
+				"tournament wins=%d discipline=%s consolation=%v walkover_only=%v",
+				wins, disc, consolation, walkoverOnly,
+			),
+			CreatedBy: in.ActorID,
 		}); err != nil {
 			return 0, err
 		}

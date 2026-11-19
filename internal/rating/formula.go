@@ -104,6 +104,31 @@ type TournamentPointsInput struct {
 	WalkoverOnly bool // technical wins only → half points, no Elo elsewhere
 }
 
+// WinStats is primary vs consolation win breakdown for one player in a tournament.
+type WinStats struct {
+	PrimaryWins             int
+	PrimaryWalkoverWins     int
+	ConsolationWins         int
+	ConsolationWalkoverWins int
+}
+
+// AwardFromWinStats picks the counting draw and flags for TournamentPoints.
+// Primary draw wins win if any; otherwise consolation (lower) wins with Consolation=true.
+// WalkoverOnly when every counting win is a walkover (anti-farm).
+func AwardFromWinStats(stats WinStats) (wins int, consolation, walkoverOnly bool) {
+	if stats.PrimaryWins > 0 {
+		wins = stats.PrimaryWins
+		walkoverOnly = stats.PrimaryWalkoverWins == stats.PrimaryWins
+		return wins, false, walkoverOnly
+	}
+	if stats.ConsolationWins > 0 {
+		wins = stats.ConsolationWins
+		walkoverOnly = stats.ConsolationWalkoverWins == stats.ConsolationWins
+		return wins, true, walkoverOnly
+	}
+	return 0, false, false
+}
+
 // TournamentPoints computes rounded points for one tournament result.
 func TournamentPoints(in TournamentPointsInput, c Coefficients) int {
 	if c.Category == nil {

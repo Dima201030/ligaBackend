@@ -124,15 +124,41 @@ WHERE rankings.season = $1
   );
 
 -- name: CountMainDrawWins :one
+-- Primary draw: main + playoff + grand_final (not group / lower / third_place).
 SELECT COUNT(*)::int AS wins
 FROM matches m
 JOIN match_sides ms ON ms.match_id = m.id
 WHERE m.tournament_id = $1
-  AND m.stage = 'main'
+  AND m.stage IN ('main', 'playoff', 'grand_final')
   AND m.status IN ('completed', 'walkover')
   AND m.is_bye = false
   AND ms.side = m.winner_side
   AND (ms.player_id = $2 OR ms.partner_id = $2);
+
+-- name: GetPlayerTournamentWinStats :one
+SELECT
+    COUNT(*) FILTER (
+        WHERE m.stage IN ('main', 'playoff', 'grand_final')
+          AND m.status IN ('completed', 'walkover')
+    )::int AS primary_wins,
+    COUNT(*) FILTER (
+        WHERE m.stage IN ('main', 'playoff', 'grand_final')
+          AND m.status = 'walkover'
+    )::int AS primary_walkover_wins,
+    COUNT(*) FILTER (
+        WHERE m.stage IN ('lower', 'consolation')
+          AND m.status IN ('completed', 'walkover')
+    )::int AS consolation_wins,
+    COUNT(*) FILTER (
+        WHERE m.stage IN ('lower', 'consolation')
+          AND m.status = 'walkover'
+    )::int AS consolation_walkover_wins
+FROM matches m
+JOIN match_sides ms ON ms.match_id = m.id
+WHERE m.tournament_id = sqlc.arg(tournament_id)
+  AND m.is_bye = false
+  AND ms.side = m.winner_side
+  AND (ms.player_id = sqlc.arg(player_id) OR ms.partner_id = sqlc.arg(player_id));
 
 -- name: CountConfirmedParticipants :one
 SELECT COUNT(*)::int AS count
