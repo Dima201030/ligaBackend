@@ -341,3 +341,34 @@ func (q *Queries) RejectUser(ctx context.Context, id pgtype.UUID) (User, error) 
 	)
 	return i, err
 }
+
+const updateUserPassword = `-- name: UpdateUserPassword :one
+UPDATE users
+SET password_hash = $2, updated_at = now()
+WHERE id = $1
+RETURNING id, email, password_hash, first_name, last_name, role, status,
+          email_verified_at, created_at, updated_at
+`
+
+type UpdateUserPasswordParams struct {
+	ID           pgtype.UUID
+	PasswordHash string
+}
+
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserPassword, arg.ID, arg.PasswordHash)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.FirstName,
+		&i.LastName,
+		&i.Role,
+		&i.Status,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

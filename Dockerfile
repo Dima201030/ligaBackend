@@ -7,7 +7,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api \
- && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/seed ./cmd/seed
+ && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/seed ./cmd/seed \
+ && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/mailworker ./cmd/mailworker
 
 FROM alpine:3.21 AS migrate
 ARG TARGETARCH
@@ -32,6 +33,7 @@ RUN adduser -D -H -u 10001 app
 WORKDIR /app
 COPY --from=build /out/api /app/api
 COPY --from=build /out/seed /app/seed
+COPY --from=build /out/mailworker /app/mailworker
 COPY migrations /app/migrations
 USER app
 EXPOSE 8080

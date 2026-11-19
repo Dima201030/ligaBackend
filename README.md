@@ -1,7 +1,7 @@
 # ligaBackend
 
-Go API для лиги Mr. Pushkin (D-017). Этап 7: контент (новости/события/страницы);
-плюс рейтинг/игроки (6), матчи/сетки (5), турниры/заявки (4) и auth (3).
+Go API для лиги Mr. Pushkin (D-017). Этап 9 (частично): SMTP-worker из `email_outbox`,
+сброс пароля и resend confirm; плюс контент (7), рейтинг (6), матчи (5), турниры (4), auth (3).
 
 ## Стек
 
@@ -35,6 +35,9 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | POST | `/api/auth/logout` | Отзыв сессии |
 | GET | `/api/auth/me` | Текущий пользователь |
 | GET/POST | `/api/auth/confirm-email` | Подтверждение email по токену |
+| POST | `/api/auth/resend-confirm` | Повтор письма подтверждения (анти-enumeration) |
+| POST | `/api/auth/forgot-password` | Запрос сброса пароля → outbox |
+| POST | `/api/auth/reset-password` | Новый пароль по токену (сессии отзываются) |
 | GET | `/api/organizer/applications` | Список заявок (organizer+) |
 | POST | `/api/organizer/applications/{id}/approve` | Approve + правка ФИО/уровня |
 | POST | `/api/organizer/applications/{id}/reject` | Reject |
@@ -99,6 +102,22 @@ double_elimination (порт `src/lib/bracket.ts`).
 Сессия: 32 random bytes в cookie `mpl_session` (prod: `__Host-mpl_session`),
 HttpOnly + SameSite=Lax + Secure(prod); в БД только SHA-256(token).
 
+### Mail worker (SMTP)
+
+Письма всегда сначала попадают в `email_outbox`. Доставка — отдельный процесс:
+
+```bash
+# локально (нужны SMTP_* в env)
+go run ./cmd/mailworker
+
+# compose profile (не стартует без SMTP_HOST/SMTP_FROM)
+docker compose --profile smtp up -d mailworker
+```
+
+Шаблоны: `confirm_email`, `registration_received`, `application_approved`,
+`application_rejected`, `password_reset`. Без SMTP очередь копится, API не падает.
+Повторные попытки с backoff; после `MAIL` max attempts статус `failed`.
+
 ### Seed организатора
 
 Пароль только из env (не коммитить):
@@ -158,6 +177,7 @@ go test ./...
 ```text
 cmd/api/           HTTP API
 cmd/seed/          CLI seed approved organizer
+cmd/mailworker/    SMTP drain of email_outbox
 internal/auth/     сессии, rate limit, уровни
 internal/config/   env
 internal/crypto/   random, SHA-256 токенов, Argon2id, AES-GCM
@@ -167,7 +187,7 @@ internal/bracket/  pure draw generation (olympic/RR/groups/DE)
 internal/matches/  generate/publish/score/advance (+ Elo hook)
 internal/rating/   формула очков/Elo, slug игрока, apply/snapshot
 internal/content/  reading time для новостей
-internal/mail/     email_outbox enqueue
+internal/mail/     outbox enqueue, templates, SMTP sender, worker
 internal/db/       pgx pool + sqlc
 migrations/        goose
 sql/               schema + queries для sqlc
