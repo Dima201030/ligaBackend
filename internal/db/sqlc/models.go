@@ -655,6 +655,7 @@ type ClubEvent struct {
 	StartsAt    pgtype.Timestamptz
 	Location    string
 	CoverUrl    pgtype.Text
+	CoverFileID pgtype.UUID
 	SeatsLeft   pgtype.Int4
 	Status      ContentStatus
 	CreatedBy   pgtype.UUID
@@ -673,6 +674,21 @@ type EmailOutbox struct {
 	SentAt        pgtype.Timestamptz
 	Error         pgtype.Text
 	CreatedAt     pgtype.Timestamptz
+}
+
+type File struct {
+	ID           pgtype.UUID
+	Bucket       string
+	Path         string
+	OriginalName string
+	Mime         string
+	Size         int64
+	Width        pgtype.Int4
+	Height       pgtype.Int4
+	Checksum     []byte
+	UploadedBy   pgtype.UUID
+	CreatedAt    pgtype.Timestamptz
+	DeletedAt    pgtype.Timestamptz
 }
 
 type Match struct {
@@ -718,6 +734,7 @@ type NewsPost struct {
 	Excerpt     string
 	BodyJson    []byte
 	CoverUrl    pgtype.Text
+	CoverFileID pgtype.UUID
 	Tag         string
 	AuthorName  string
 	AuthorID    pgtype.UUID
@@ -746,6 +763,7 @@ type Profile struct {
 	City          string
 	Bio           string
 	AvatarUrl     pgtype.Text
+	AvatarFileID  pgtype.UUID
 	PlayerStatus  string
 	Rating        float64
 	Points        int32
@@ -844,6 +862,7 @@ type Tournament struct {
 	EntryFee             int32
 	MaxParticipants      int32
 	CoverUrl             pgtype.Text
+	CoverFileID          pgtype.UUID
 	Season               int32
 	CreatedBy            pgtype.UUID
 	BracketStatus        BracketStatus

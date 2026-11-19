@@ -6,9 +6,12 @@ import (
 	"net/http"
 	"time"
 
+	"log"
+
 	"github.com/Dima201030/ligaBackend/internal/auth"
 	"github.com/Dima201030/ligaBackend/internal/config"
 	"github.com/Dima201030/ligaBackend/internal/db"
+	"github.com/Dima201030/ligaBackend/internal/files"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -22,12 +25,14 @@ type Server struct {
 	store   *db.Store
 	cfg     config.Config
 	limiter *auth.RateLimiter
+	files   *files.DiskStore
 }
 
 // Options configures the HTTP server.
 type Options struct {
 	Store *db.Store
 	Cfg   config.Config
+	Files *files.DiskStore
 }
 
 // New creates an API server. store may be nil in unit tests (DB check → unknown).
@@ -39,11 +44,21 @@ func New(store *db.Store) *Server {
 
 // NewWithOptions creates an API server with explicit configuration.
 func NewWithOptions(opts Options) *Server {
+	fileStore := opts.Files
+	if fileStore == nil && opts.Cfg.UploadsDir != "" {
+		fs, err := files.NewDiskStore(opts.Cfg.UploadsDir, opts.Cfg.MaxUploadBytes)
+		if err != nil {
+			log.Printf("uploads: disabled (%v)", err)
+		} else {
+			fileStore = fs
+		}
+	}
 	s := &Server{
 		router:  chi.NewRouter(),
 		store:   opts.Store,
 		cfg:     opts.Cfg,
 		limiter: auth.NewRateLimiter(5, 15*time.Minute),
+		files:   fileStore,
 	}
 	s.router.Use(middleware.RequestID)
 	s.router.Use(middleware.RealIP)
@@ -83,6 +98,7 @@ func NewWithOptions(opts Options) *Server {
 	s.router.Get("/api/events/{slug}", s.handleGetPublicEvent)
 	s.router.Get("/api/pages", s.handleListPages)
 	s.router.Get("/api/pages/{slug}", s.handleGetPage)
+	s.router.Get("/api/files/{id}", s.handleGetFile)
 
 	s.router.Route("/api/organizer", func(r chi.Router) {
 		r.Use(s.requireAuth)
@@ -115,6 +131,11 @@ func NewWithOptions(opts Options) *Server {
 		r.Post("/events", s.handleCreateEvent)
 		r.Patch("/events/{id}", s.handleUpdateEvent)
 		r.Put("/pages/{slug}", s.handleUpsertPage)
+		r.Post("/files", s.handleUploadFile)
+		r.Post("/tournaments/{id}/cover", s.handleAttachTournamentCover)
+		r.Post("/news/{id}/cover", s.handleAttachNewsCover)
+		r.Post("/events/{id}/cover", s.handleAttachEventCover)
+		r.Post("/players/{id}/avatar", s.handleAttachPlayerAvatar)
 	})
 
 	return s

@@ -49,6 +49,10 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      UPLOADS_DIR: /data/uploads
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-5242880}
+    volumes:
+      - uploads:/data/uploads
     ports:
       - "127.0.0.1:3020:8080"
     healthcheck:
@@ -82,3 +86,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:

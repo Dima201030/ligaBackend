@@ -20,7 +20,7 @@ SET rating = $1,
     losses = losses + $5,
     updated_at = now()
 WHERE user_id = $6
-RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, player_status, rating, points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, matches_played, wins, losses, created_at, updated_at
 `
 
 type ApplyProfileRatingDeltaParams struct {
@@ -51,6 +51,7 @@ func (q *Queries) ApplyProfileRatingDelta(ctx context.Context, arg ApplyProfileR
 		&i.City,
 		&i.Bio,
 		&i.AvatarUrl,
+		&i.AvatarFileID,
 		&i.PlayerStatus,
 		&i.Rating,
 		&i.Points,
@@ -507,7 +508,7 @@ func (q *Queries) ListTournamentPointEventsInWindow(ctx context.Context, created
 }
 
 const lockProfileForUpdate = `-- name: LockProfileForUpdate :one
-SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, player_status,
+SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
        rating, points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
 WHERE user_id = $1
@@ -526,6 +527,7 @@ func (q *Queries) LockProfileForUpdate(ctx context.Context, userID pgtype.UUID) 
 		&i.City,
 		&i.Bio,
 		&i.AvatarUrl,
+		&i.AvatarFileID,
 		&i.PlayerStatus,
 		&i.Rating,
 		&i.Points,
@@ -580,7 +582,7 @@ const setProfilePoints = `-- name: SetProfilePoints :one
 UPDATE profiles
 SET points = $2, updated_at = now()
 WHERE user_id = $1
-RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, player_status, rating, points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, matches_played, wins, losses, created_at, updated_at
 `
 
 type SetProfilePointsParams struct {
@@ -600,6 +602,7 @@ func (q *Queries) SetProfilePoints(ctx context.Context, arg SetProfilePointsPara
 		&i.City,
 		&i.Bio,
 		&i.AvatarUrl,
+		&i.AvatarFileID,
 		&i.PlayerStatus,
 		&i.Rating,
 		&i.Points,

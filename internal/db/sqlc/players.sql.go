@@ -19,7 +19,7 @@ INSERT INTO profiles (
     $1, $2, $3, $4, $5, $6, $7, $8,
     $9, $10, $11, $12, $13, $14
 )
-RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, player_status, rating, points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, matches_played, wins, losses, created_at, updated_at
 `
 
 type CreateProfileParams struct {
@@ -66,6 +66,7 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 		&i.City,
 		&i.Bio,
 		&i.AvatarUrl,
+		&i.AvatarFileID,
 		&i.PlayerStatus,
 		&i.Rating,
 		&i.Points,
@@ -79,7 +80,7 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 }
 
 const getProfileBySlug = `-- name: GetProfileBySlug :one
-SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, player_status,
+SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
        rating, points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
 WHERE slug = $1
@@ -97,6 +98,7 @@ func (q *Queries) GetProfileBySlug(ctx context.Context, slug string) (Profile, e
 		&i.City,
 		&i.Bio,
 		&i.AvatarUrl,
+		&i.AvatarFileID,
 		&i.PlayerStatus,
 		&i.Rating,
 		&i.Points,
@@ -110,7 +112,7 @@ func (q *Queries) GetProfileBySlug(ctx context.Context, slug string) (Profile, e
 }
 
 const getProfileByUserID = `-- name: GetProfileByUserID :one
-SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, player_status,
+SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
        rating, points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
 WHERE user_id = $1
@@ -128,6 +130,7 @@ func (q *Queries) GetProfileByUserID(ctx context.Context, userID pgtype.UUID) (P
 		&i.City,
 		&i.Bio,
 		&i.AvatarUrl,
+		&i.AvatarFileID,
 		&i.PlayerStatus,
 		&i.Rating,
 		&i.Points,
@@ -456,7 +459,7 @@ SET gender = COALESCE($1, gender),
     level = COALESCE($6, level),
     updated_at = now()
 WHERE user_id = $7
-RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, player_status, rating, points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, matches_played, wins, losses, created_at, updated_at
 `
 
 type UpdateProfilePublicParams struct {
@@ -489,6 +492,7 @@ func (q *Queries) UpdateProfilePublic(ctx context.Context, arg UpdateProfilePubl
 		&i.City,
 		&i.Bio,
 		&i.AvatarUrl,
+		&i.AvatarFileID,
 		&i.PlayerStatus,
 		&i.Rating,
 		&i.Points,

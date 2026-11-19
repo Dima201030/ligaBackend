@@ -23,6 +23,7 @@ coverage.html
 
 # Local data
 pgdata/
+data/
 
 # Tool binaries for Docker migrate (see scripts/fetch-goose.sh)
 third_party/

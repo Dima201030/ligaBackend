@@ -650,7 +650,7 @@ SET bracket_status = 'published',
     updated_at = now()
 WHERE id = $1
   AND bracket_status IN ('draft', 'published')
-RETURNING id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
+RETURNING id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
 `
 
 func (q *Queries) PublishTournamentBracket(ctx context.Context, id pgtype.UUID) (Tournament, error) {
@@ -677,6 +677,7 @@ func (q *Queries) PublishTournamentBracket(ctx context.Context, id pgtype.UUID) 
 		&i.EntryFee,
 		&i.MaxParticipants,
 		&i.CoverUrl,
+		&i.CoverFileID,
 		&i.Season,
 		&i.CreatedBy,
 		&i.BracketStatus,
@@ -740,7 +741,7 @@ SET bracket_status = 'draft',
     bracket_third_place = $2,
     updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
+RETURNING id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
 `
 
 type SetTournamentBracketDraftParams struct {
@@ -772,6 +773,7 @@ func (q *Queries) SetTournamentBracketDraft(ctx context.Context, arg SetTourname
 		&i.EntryFee,
 		&i.MaxParticipants,
 		&i.CoverUrl,
+		&i.CoverFileID,
 		&i.Season,
 		&i.CreatedBy,
 		&i.BracketStatus,

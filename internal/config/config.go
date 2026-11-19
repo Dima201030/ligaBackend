@@ -22,6 +22,8 @@ type Config struct {
 	SMTPUser                 string
 	SMTPPassword             string
 	SMTPFrom                 string
+	UploadsDir               string
+	MaxUploadBytes           int64
 }
 
 // Load reads configuration from environment variables.
@@ -69,6 +71,17 @@ func Load() (Config, error) {
 		cfg.SMTPPort = n
 	} else {
 		cfg.SMTPPort = 587
+	}
+
+	cfg.UploadsDir = envOr("UPLOADS_DIR", "./data/uploads")
+	if v := strings.TrimSpace(os.Getenv("MAX_UPLOAD_BYTES")); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < 1024 {
+			return Config{}, fmt.Errorf("MAX_UPLOAD_BYTES: invalid %q", v)
+		}
+		cfg.MaxUploadBytes = n
+	} else {
+		cfg.MaxUploadBytes = 5 << 20 // 5 MiB
 	}
 
 	return cfg, nil

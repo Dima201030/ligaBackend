@@ -66,7 +66,7 @@ WHERE user_id = $1
 RETURNING *;
 
 -- name: LockProfileForUpdate :one
-SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, player_status,
+SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
        rating, points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
 WHERE user_id = $1

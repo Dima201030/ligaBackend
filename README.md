@@ -1,7 +1,7 @@
 # ligaBackend
 
-Go API для лиги Mr. Pushkin (D-017). Этап 9 (частично): SMTP-worker из `email_outbox`,
-сброс пароля и resend confirm; плюс контент (7), рейтинг (6), матчи (5), турниры (4), auth (3).
+Go API для лиги Mr. Pushkin (D-017). Uploads (covers/avatars) + SMTP-worker + контент,
+рейтинг, матчи, турниры, auth.
 
 ## Стек
 
@@ -82,6 +82,12 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | POST | `/api/organizer/events` | Создать событие |
 | PATCH | `/api/organizer/events/{id}` | Редактировать событие |
 | PUT | `/api/organizer/pages/{slug}` | Upsert markdown-страницы |
+| POST | `/api/organizer/files` | Upload image (multipart `file`) → metadata + `/api/files/{id}` |
+| GET | `/api/files/{id}` | Отдать файл (`?meta=1` — JSON) |
+| POST | `/api/organizer/tournaments/{id}/cover` | Upload + привязка обложки турнира |
+| POST | `/api/organizer/news/{id}/cover` | Upload + обложка новости |
+| POST | `/api/organizer/events/{id}/cover` | Upload + обложка события |
+| POST | `/api/organizer/players/{id}/avatar` | Upload + аватар игрока |
 
 Вместимость: `SELECT … FOR UPDATE` на турнир в одной транзакции; overflow → waitlist;
 отмена confirmed/pending продвигает очередь.
@@ -101,6 +107,17 @@ double_elimination (порт `src/lib/bracket.ts`).
 
 Сессия: 32 random bytes в cookie `mpl_session` (prod: `__Host-mpl_session`),
 HttpOnly + SameSite=Lax + Secure(prod); в БД только SHA-256(token).
+
+### Uploads
+
+Локальный диск (`UPLOADS_DIR`, по умолчанию `./data/uploads`). Допустимы JPEG/PNG/GIF/WebP,
+лимит `MAX_UPLOAD_BYTES` (5 MiB). В БД — таблица `files` (checksum SHA-256, mime, size);
+`cover_url` / `avatar_url` получают `/api/files/{id}`. Compose volume: `uploads`.
+
+```bash
+curl -sS -b cookies.txt -F file=@cover.jpg \
+  http://127.0.0.1:3020/api/organizer/files
+```
 
 ### Mail worker (SMTP)
 
@@ -187,6 +204,7 @@ internal/bracket/  pure draw generation (olympic/RR/groups/DE)
 internal/matches/  generate/publish/score/advance (+ Elo hook)
 internal/rating/   формула очков/Elo, slug игрока, apply/snapshot
 internal/content/  reading time для новостей
+internal/files/    disk store, MIME allow-list, path safety
 internal/mail/     outbox enqueue, templates, SMTP sender, worker
 internal/db/       pgx pool + sqlc
 migrations/        goose

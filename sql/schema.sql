@@ -46,6 +46,7 @@ CREATE TABLE profiles (
     city            TEXT NOT NULL DEFAULT 'Пушкин',
     bio             TEXT NOT NULL DEFAULT '',
     avatar_url      TEXT,
+    avatar_file_id  UUID,
     player_status   TEXT NOT NULL DEFAULT 'active',
     rating          DOUBLE PRECISION NOT NULL DEFAULT 1200,
     points          INT NOT NULL DEFAULT 0,
@@ -193,6 +194,7 @@ CREATE TABLE tournaments (
     entry_fee               INT NOT NULL DEFAULT 0,
     max_participants        INT NOT NULL,
     cover_url               TEXT,
+    cover_file_id           UUID,
     season                  INT NOT NULL,
     created_by              UUID REFERENCES users (id) ON DELETE SET NULL,
     bracket_status          bracket_status NOT NULL DEFAULT 'none',
@@ -405,6 +407,7 @@ CREATE TABLE news_posts (
     excerpt         TEXT NOT NULL DEFAULT '',
     body_json       JSONB NOT NULL DEFAULT '[]'::jsonb,
     cover_url       TEXT,
+    cover_file_id   UUID,
     tag             TEXT NOT NULL DEFAULT '',
     author_name     TEXT NOT NULL DEFAULT '',
     author_id       UUID REFERENCES users (id) ON DELETE SET NULL,
@@ -430,6 +433,7 @@ CREATE TABLE club_events (
     starts_at       TIMESTAMPTZ NOT NULL,
     location        TEXT NOT NULL DEFAULT '',
     cover_url       TEXT,
+    cover_file_id   UUID,
     seats_left      INT,
     status          content_status NOT NULL DEFAULT 'draft',
     created_by      UUID REFERENCES users (id) ON DELETE SET NULL,
@@ -453,3 +457,26 @@ CREATE TABLE pages (
     CONSTRAINT pages_title_chk CHECK (char_length(trim(title)) >= 2),
     CONSTRAINT pages_slug_chk CHECK (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$')
 );
+
+CREATE TABLE files (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bucket          TEXT NOT NULL DEFAULT 'uploads',
+    path            TEXT NOT NULL,
+    original_name   TEXT NOT NULL DEFAULT '',
+    mime            TEXT NOT NULL,
+    size            BIGINT NOT NULL,
+    width           INT,
+    height          INT,
+    checksum        BYTEA NOT NULL,
+    uploaded_by     UUID REFERENCES users (id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at      TIMESTAMPTZ,
+    CONSTRAINT files_path_uidx UNIQUE (bucket, path),
+    CONSTRAINT files_size_chk CHECK (size > 0 AND size <= 20971520),
+    CONSTRAINT files_mime_chk CHECK (mime IN (
+        'image/jpeg', 'image/png', 'image/webp', 'image/gif'
+    ))
+);
+
+CREATE INDEX files_uploaded_by_idx ON files (uploaded_by);
+CREATE INDEX files_created_at_idx ON files (created_at DESC);
