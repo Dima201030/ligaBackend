@@ -13,7 +13,9 @@ SELECT
     r.cancelled_at,
     pu.first_name AS player_first_name,
     pu.last_name AS player_last_name,
-    pp.level AS player_level
+    pp.level AS player_level,
+    pp.rating AS player_rating,
+    pp.slug AS player_slug
 FROM registrations r
 JOIN users pu ON pu.id = r.player_id
 JOIN profiles pp ON pp.user_id = r.player_id

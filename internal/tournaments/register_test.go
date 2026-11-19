@@ -10,6 +10,7 @@ import (
 	"github.com/Dima201030/ligaBackend/internal/crypto"
 	"github.com/Dima201030/ligaBackend/internal/db"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
+	"github.com/Dima201030/ligaBackend/internal/rating"
 	"github.com/Dima201030/ligaBackend/internal/tournaments"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -48,11 +49,9 @@ func createApprovedPlayer(t *testing.T, store *db.Store, email string) pgtype.UU
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Queries.CreateProfile(ctx, sqlc.CreateProfileParams{
-		UserID: user.ID,
-		Phone:  pgtype.Text{},
-		Level:  "challenger",
-	}); err != nil {
+	if _, err := store.Queries.CreateProfile(ctx, rating.NewProfileParams(
+		user.ID, pgtype.Text{}, "challenger", "Test", "Player",
+	)); err != nil {
 		t.Fatal(err)
 	}
 	return user.ID

@@ -12,6 +12,7 @@ import (
 	"github.com/Dima201030/ligaBackend/internal/crypto"
 	"github.com/Dima201030/ligaBackend/internal/db"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
+	"github.com/Dima201030/ligaBackend/internal/rating"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -42,19 +43,40 @@ func main() {
 	}
 	defer store.Close()
 
+	hash, err := crypto.HashPassword(password)
+	if err != nil {
+		log.Fatalf("hash: %v", err)
+	}
+
 	existing, err := store.Queries.GetUserByEmail(ctx, email)
 	if err == nil {
-		fmt.Printf("organizer already exists: id=%s email=%s status=%s role=%s\n",
-			uuidString(existing.ID), existing.Email, existing.Status, existing.Role)
+		reset := strings.TrimSpace(os.Getenv("SEED_ORGANIZER_RESET")) == "1"
+		if !reset {
+			fmt.Printf("organizer already exists: id=%s email=%s status=%s role=%s\n",
+				uuidString(existing.ID), existing.Email, existing.Status, existing.Role)
+			fmt.Println("set SEED_ORGANIZER_RESET=1 to update password/role/status")
+			return
+		}
+		_, err = store.Pool.Exec(ctx, `
+			UPDATE users
+			SET password_hash = $1,
+			    first_name = $2,
+			    last_name = $3,
+			    role = 'organizer',
+			    status = 'approved',
+			    email_verified_at = COALESCE(email_verified_at, now()),
+			    updated_at = now()
+			WHERE id = $4
+		`, hash, firstName, lastName, existing.ID)
+		if err != nil {
+			log.Fatalf("reset organizer: %v", err)
+		}
+		fmt.Printf("updated organizer: id=%s email=%s role=organizer status=approved\n",
+			uuidString(existing.ID), existing.Email)
 		return
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		log.Fatalf("lookup: %v", err)
-	}
-
-	hash, err := crypto.HashPassword(password)
-	if err != nil {
-		log.Fatalf("hash: %v", err)
 	}
 
 	tx, err := store.Pool.Begin(ctx)
@@ -75,10 +97,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("create user: %v", err)
 	}
-	if _, err := q.CreateProfile(ctx, sqlc.CreateProfileParams{
-		UserID: user.ID,
-		Level:  level,
-	}); err != nil {
+	if _, err := q.CreateProfile(ctx, rating.NewProfileParams(
+		user.ID, pgtype.Text{}, level, firstName, lastName,
+	)); err != nil {
 		log.Fatalf("create profile: %v", err)
 	}
 	if err := tx.Commit(ctx); err != nil {

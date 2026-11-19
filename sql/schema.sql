@@ -38,15 +38,39 @@ CREATE INDEX sessions_active_idx ON sessions (expires_at)
     WHERE revoked_at IS NULL;
 
 CREATE TABLE profiles (
-    user_id     UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
-    phone       TEXT,
-    level       TEXT NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    user_id         UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    phone           TEXT,
+    level           TEXT NOT NULL,
+    slug            TEXT NOT NULL,
+    gender          TEXT,
+    city            TEXT NOT NULL DEFAULT 'Пушкин',
+    bio             TEXT NOT NULL DEFAULT '',
+    avatar_url      TEXT,
+    player_status   TEXT NOT NULL DEFAULT 'active',
+    rating          DOUBLE PRECISION NOT NULL DEFAULT 1200,
+    points          INT NOT NULL DEFAULT 0,
+    matches_played  INT NOT NULL DEFAULT 0,
+    wins            INT NOT NULL DEFAULT 0,
+    losses          INT NOT NULL DEFAULT 0,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT profiles_level_chk CHECK (
         level IN ('masters', 'challenger', 'futures', 'rookies', 'beginners', 'newcomers')
-    )
+    ),
+    CONSTRAINT profiles_slug_uidx UNIQUE (slug),
+    CONSTRAINT profiles_gender_chk CHECK (gender IS NULL OR gender IN ('male', 'female')),
+    CONSTRAINT profiles_player_status_chk CHECK (player_status IN ('active', 'blocked', 'archived')),
+    CONSTRAINT profiles_rating_chk CHECK (rating >= 800),
+    CONSTRAINT profiles_points_chk CHECK (points >= 0),
+    CONSTRAINT profiles_matches_played_chk CHECK (matches_played >= 0),
+    CONSTRAINT profiles_wins_chk CHECK (wins >= 0),
+    CONSTRAINT profiles_losses_chk CHECK (losses >= 0)
 );
+
+CREATE INDEX profiles_rating_idx ON profiles (rating DESC);
+CREATE INDEX profiles_points_idx ON profiles (points DESC);
+CREATE INDEX profiles_level_idx ON profiles (level);
+CREATE INDEX profiles_player_status_idx ON profiles (player_status);
 
 CREATE TYPE verification_kind AS ENUM ('email', 'reset', 'invite');
 
@@ -295,3 +319,77 @@ CREATE TABLE match_sides (
 
 CREATE INDEX match_sides_match_id_idx ON match_sides (match_id);
 CREATE INDEX match_sides_player_id_idx ON match_sides (player_id);
+
+CREATE TYPE rating_event_kind AS ENUM (
+    'match',
+    'tournament',
+    'manual',
+    'import',
+    'recalc'
+);
+
+CREATE TABLE rating_configs (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    season          INT NOT NULL,
+    version         INT NOT NULL,
+    coefficients    JSONB NOT NULL,
+    active_from     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by      UUID REFERENCES users (id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT rating_configs_season_version_uidx UNIQUE (season, version),
+    CONSTRAINT rating_configs_version_chk CHECK (version >= 1)
+);
+
+CREATE INDEX rating_configs_season_idx ON rating_configs (season, version DESC);
+
+CREATE TABLE rating_events (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    player_id       UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    match_id        UUID REFERENCES matches (id) ON DELETE SET NULL,
+    tournament_id   UUID REFERENCES tournaments (id) ON DELETE SET NULL,
+    kind            rating_event_kind NOT NULL,
+    points_delta    INT NOT NULL DEFAULT 0,
+    rating_delta    DOUBLE PRECISION NOT NULL DEFAULT 0,
+    rating_after    DOUBLE PRECISION NOT NULL,
+    points_after    INT NOT NULL DEFAULT 0,
+    config_id       UUID REFERENCES rating_configs (id) ON DELETE SET NULL,
+    reason          TEXT NOT NULL DEFAULT '',
+    created_by      UUID REFERENCES users (id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT rating_events_rating_after_chk CHECK (rating_after >= 800),
+    CONSTRAINT rating_events_points_after_chk CHECK (points_after >= 0)
+);
+
+CREATE UNIQUE INDEX rating_events_match_player_kind_uidx
+    ON rating_events (match_id, player_id, kind)
+    WHERE match_id IS NOT NULL;
+
+CREATE UNIQUE INDEX rating_events_tournament_player_kind_uidx
+    ON rating_events (tournament_id, player_id, kind)
+    WHERE tournament_id IS NOT NULL AND kind = 'tournament';
+
+CREATE INDEX rating_events_player_id_idx ON rating_events (player_id, created_at DESC);
+CREATE INDEX rating_events_created_at_idx ON rating_events (created_at DESC);
+
+CREATE TABLE rankings (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    season              INT NOT NULL,
+    player_id           UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    position            INT NOT NULL,
+    previous_position   INT,
+    points              INT NOT NULL,
+    rating              DOUBLE PRECISION NOT NULL,
+    singles_points      INT NOT NULL DEFAULT 0,
+    doubles_points      INT NOT NULL DEFAULT 0,
+    category            TEXT NOT NULL,
+    calculated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT rankings_season_player_calc_uidx UNIQUE (season, player_id, calculated_at),
+    CONSTRAINT rankings_position_chk CHECK (position >= 1),
+    CONSTRAINT rankings_points_chk CHECK (points >= 0),
+    CONSTRAINT rankings_category_chk CHECK (
+        category IN ('masters', 'challenger', 'futures', 'rookies', 'beginners', 'newcomers')
+    )
+);
+
+CREATE INDEX rankings_season_calc_idx ON rankings (season, calculated_at DESC);
+CREATE INDEX rankings_season_position_idx ON rankings (season, calculated_at DESC, position);

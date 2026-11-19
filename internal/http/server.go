@@ -69,6 +69,11 @@ func NewWithOptions(opts Options) *Server {
 	s.router.With(s.requireAuth, s.requireApproved).Post("/api/tournaments/{slug}/registrations", s.handleCreateRegistration)
 	s.router.With(s.requireAuth, s.requireApproved).Delete("/api/tournaments/{slug}/registrations/me", s.handleCancelRegistration)
 
+	s.router.Get("/api/players", s.handleListPublicPlayers)
+	s.router.Get("/api/players/{slug}", s.handleGetPublicPlayer)
+	s.router.Get("/api/players/{slug}/rating-events", s.handlePlayerRatingEvents)
+	s.router.Get("/api/rankings", s.handleListRankings)
+
 	s.router.Route("/api/organizer", func(r chi.Router) {
 		r.Use(s.requireAuth)
 		r.Use(s.requireOrganizer)
@@ -83,11 +88,16 @@ func NewWithOptions(opts Options) *Server {
 		r.Post("/tournaments/{id}/bracket/generate", s.handleGenerateBracket)
 		r.Post("/tournaments/{id}/bracket/publish", s.handlePublishBracket)
 		r.Get("/tournaments/{id}/matches", s.handleListOrganizerTournamentMatches)
+		r.Post("/tournaments/{id}/ratings/apply", s.handleApplyTournamentRatings)
 		r.Get("/matches", s.handleListOrganizerMatches)
 		r.Patch("/matches/{id}", s.handleUpdateMatchSchedule)
 		r.Post("/matches/{id}/score", s.handleSubmitScore)
 		r.Post("/matches/{id}/walkover", s.handleWalkover)
 		r.Post("/matches/{id}/cancel", s.handleCancelMatch)
+		r.Get("/players", s.handleListOrganizerPlayers)
+		r.Patch("/players/{id}", s.handleUpdateOrganizerPlayer)
+		r.Post("/ratings/manual", s.handleManualRating)
+		r.Post("/ratings/snapshot", s.handleRatingSnapshot)
 	})
 
 	return s

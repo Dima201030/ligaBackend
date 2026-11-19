@@ -316,7 +316,9 @@ SELECT
     r.cancelled_at,
     pu.first_name AS player_first_name,
     pu.last_name AS player_last_name,
-    pp.level AS player_level
+    pp.level AS player_level,
+    pp.rating AS player_rating,
+    pp.slug AS player_slug
 FROM registrations r
 JOIN users pu ON pu.id = r.player_id
 JOIN profiles pp ON pp.user_id = r.player_id
@@ -340,6 +342,8 @@ type ListConfirmedRegistrationsForBracketRow struct {
 	PlayerFirstName   string
 	PlayerLastName    string
 	PlayerLevel       string
+	PlayerRating      float64
+	PlayerSlug        string
 }
 
 func (q *Queries) ListConfirmedRegistrationsForBracket(ctx context.Context, tournamentID pgtype.UUID) ([]ListConfirmedRegistrationsForBracketRow, error) {
@@ -366,6 +370,8 @@ func (q *Queries) ListConfirmedRegistrationsForBracket(ctx context.Context, tour
 			&i.PlayerFirstName,
 			&i.PlayerLastName,
 			&i.PlayerLevel,
+			&i.PlayerRating,
+			&i.PlayerSlug,
 		); err != nil {
 			return nil, err
 		}

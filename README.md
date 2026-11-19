@@ -1,7 +1,7 @@
 # ligaBackend
 
-Go API для лиги Mr. Pushkin (D-017). Этап 5: матчи и сетки (generate/publish/score),
-плюс турниры/заявки этапа 4 и auth этапа 3 (cookie-сессии, approve/reject).
+Go API для лиги Mr. Pushkin (D-017). Этап 6: рейтинг (Elo + очки) и публичные игроки;
+плюс матчи/сетки (5), турниры/заявки (4) и auth (3).
 
 ## Стек
 
@@ -57,6 +57,15 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | POST | `/api/organizer/matches/{id}/score` | Счёт по сетам + advance |
 | POST | `/api/organizer/matches/{id}/walkover` | Техническая победа |
 | POST | `/api/organizer/matches/{id}/cancel` | Отмена матча |
+| GET | `/api/players` | Публичный список игроков (`category`, `q`, `limit`, `offset`) |
+| GET | `/api/players/{slug}` | Публичный профиль |
+| GET | `/api/players/{slug}/rating-events` | История рейтинга |
+| GET | `/api/rankings` | Таблица (`season`, `category`; live или snapshot) |
+| GET | `/api/organizer/players` | Игроки для организатора |
+| PATCH | `/api/organizer/players/{id}` | Правка профиля/категории/статуса |
+| POST | `/api/organizer/ratings/manual` | Ручная корректировка (с причиной) |
+| POST | `/api/organizer/ratings/snapshot` | Снимок таблицы `rankings` |
+| POST | `/api/organizer/tournaments/{id}/ratings/apply` | Начисление очков за турнир |
 
 Вместимость: `SELECT … FOR UPDATE` на турнир в одной транзакции; overflow → waitlist;
 отмена confirmed/pending продвигает очередь.
@@ -67,6 +76,12 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 (и проигравшего в матч за 3-е место при olympic+third_place). Оптимистичная
 блокировка по `version`. Форматы: olympic, round_robin, groups_playoff,
 double_elimination (порт `src/lib/bracket.ts`).
+
+Рейтинг (этап 6): коэффициенты v1 из `docs/RATING.md` в `rating_configs`
+(сезон 2026). Elo пишется в той же TX, что и счёт/walkover (walkover Elo не
+двигает). Очки турнира — отдельным вызовом `ratings/apply` (идемпотентно).
+Посев сетки `seeding=rating` читает `profiles.rating`. Снимок таблицы —
+`POST /api/organizer/ratings/snapshot`.
 
 Сессия: 32 random bytes в cookie `mpl_session` (prod: `__Host-mpl_session`),
 HttpOnly + SameSite=Lax + Secure(prod); в БД только SHA-256(token).
@@ -133,10 +148,11 @@ cmd/seed/          CLI seed approved organizer
 internal/auth/     сессии, rate limit, уровни
 internal/config/   env
 internal/crypto/   random, SHA-256 токенов, Argon2id, AES-GCM
-internal/http/     router, auth, organizer, tournaments, matches
+internal/http/     router, auth, organizer, tournaments, matches, players, ratings
 internal/tournaments  slug + registration capacity
 internal/bracket/  pure draw generation (olympic/RR/groups/DE)
-internal/matches/  generate/publish/score/advance
+internal/matches/  generate/publish/score/advance (+ Elo hook)
+internal/rating/   формула очков/Elo, slug игрока, apply/snapshot
 internal/mail/     email_outbox enqueue
 internal/db/       pgx pool + sqlc
 migrations/        goose

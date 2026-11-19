@@ -11,6 +11,7 @@ import (
 	"github.com/Dima201030/ligaBackend/internal/bracket"
 	"github.com/Dima201030/ligaBackend/internal/db"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
+	"github.com/Dima201030/ligaBackend/internal/rating"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -308,7 +309,7 @@ func registrationsToEntries(regs []sqlc.ListConfirmedRegistrationsForBracketRow,
 			RegistrationID: uuidString(r.ID),
 			Name:           name,
 			Seed:           seed,
-			Rating:         0, // rating DB is stage 6
+			Rating:         int(r.PlayerRating + 0.5),
 		}
 		if r.PartnerID.Valid {
 			e.PartnerID = uuidString(r.PartnerID)
@@ -529,6 +530,10 @@ func finishMatch(ctx context.Context, store *db.Store, in finishParams) (sqlc.Ma
 		return sqlc.Match{}, err
 	}
 
+	if err := applyMatchRating(ctx, q, match, side1, side2, in); err != nil {
+		return sqlc.Match{}, err
+	}
+
 	diff := in.AuditDiff
 	if diff == nil {
 		diff, _ = json.Marshal(map[string]any{
@@ -550,6 +555,57 @@ func finishMatch(ctx context.Context, store *db.Store, in finishParams) (sqlc.Ma
 		return sqlc.Match{}, err
 	}
 	return updated, nil
+}
+
+func applyMatchRating(ctx context.Context, q *sqlc.Queries, match sqlc.Match, side1, side2 sqlc.MatchSide, in finishParams) error {
+	tour, err := q.GetTournamentByID(ctx, match.TournamentID)
+	if err != nil {
+		return err
+	}
+	sidePlayers := func(side sqlc.MatchSide) ([]rating.PlayerRating, error) {
+		out := make([]rating.PlayerRating, 0, 2)
+		ids := []pgtype.UUID{side.PlayerID}
+		if side.PartnerID.Valid {
+			ids = append(ids, side.PartnerID)
+		}
+		for _, id := range ids {
+			if !id.Valid {
+				continue
+			}
+			prof, err := q.GetProfileByUserID(ctx, id)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, rating.PlayerRating{
+				ID:            id,
+				Rating:        prof.Rating,
+				MatchesPlayed: int(prof.MatchesPlayed),
+				Points:        prof.Points,
+			})
+		}
+		return out, nil
+	}
+	s1, err := sidePlayers(side1)
+	if err != nil {
+		return err
+	}
+	s2, err := sidePlayers(side2)
+	if err != nil {
+		return err
+	}
+	doubles := side1.PartnerID.Valid || side2.PartnerID.Valid ||
+		tour.Type == sqlc.TournamentTypeDoubles || tour.Type == sqlc.TournamentTypeMixed
+	return rating.ApplyMatchElo(ctx, q, rating.MatchEloInput{
+		MatchID:      match.ID,
+		TournamentID: match.TournamentID,
+		Season:       tour.Season,
+		WinnerSide:   in.WinnerSide,
+		Side1:        s1,
+		Side2:        s2,
+		Doubles:      doubles,
+		Walkover:     in.Status == sqlc.MatchStatusWalkover,
+		ActorID:      in.ActorID,
+	})
 }
 
 func advanceSide(ctx context.Context, q *sqlc.Queries, nextMatchID pgtype.UUID, nextSlot pgtype.Int2, from sqlc.MatchSide) error {

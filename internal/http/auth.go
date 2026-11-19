@@ -12,6 +12,7 @@ import (
 	"github.com/Dima201030/ligaBackend/internal/crypto"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
 	"github.com/Dima201030/ligaBackend/internal/mail"
+	"github.com/Dima201030/ligaBackend/internal/rating"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -111,11 +112,9 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := q.CreateProfile(ctx, sqlc.CreateProfileParams{
-		UserID: user.ID,
-		Phone:  auth.TextOrNull(phone),
-		Level:  level,
-	})
+	profile, err := q.CreateProfile(ctx, rating.NewProfileParams(
+		user.ID, auth.TextOrNull(phone), level, firstName, lastName,
+	))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось создать аккаунт")
 		return

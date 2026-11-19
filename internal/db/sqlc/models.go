@@ -145,6 +145,51 @@ func (ns NullMatchStatus) Value() (driver.Value, error) {
 	return string(ns.MatchStatus), nil
 }
 
+type RatingEventKind string
+
+const (
+	RatingEventKindMatch      RatingEventKind = "match"
+	RatingEventKindTournament RatingEventKind = "tournament"
+	RatingEventKindManual     RatingEventKind = "manual"
+	RatingEventKindImport     RatingEventKind = "import"
+	RatingEventKindRecalc     RatingEventKind = "recalc"
+)
+
+func (e *RatingEventKind) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = RatingEventKind(s)
+	case string:
+		*e = RatingEventKind(s)
+	default:
+		return fmt.Errorf("unsupported scan type for RatingEventKind: %T", src)
+	}
+	return nil
+}
+
+type NullRatingEventKind struct {
+	RatingEventKind RatingEventKind
+	Valid           bool // Valid is true if RatingEventKind is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullRatingEventKind) Scan(value interface{}) error {
+	if value == nil {
+		ns.RatingEventKind, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.RatingEventKind.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullRatingEventKind) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.RatingEventKind), nil
+}
+
 type RegistrationStatus string
 
 const (
@@ -564,11 +609,62 @@ type MatchSide struct {
 }
 
 type Profile struct {
-	UserID    pgtype.UUID
-	Phone     pgtype.Text
-	Level     string
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	UserID        pgtype.UUID
+	Phone         pgtype.Text
+	Level         string
+	Slug          string
+	Gender        pgtype.Text
+	City          string
+	Bio           string
+	AvatarUrl     pgtype.Text
+	PlayerStatus  string
+	Rating        float64
+	Points        int32
+	MatchesPlayed int32
+	Wins          int32
+	Losses        int32
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
+type Ranking struct {
+	ID               pgtype.UUID
+	Season           int32
+	PlayerID         pgtype.UUID
+	Position         int32
+	PreviousPosition pgtype.Int4
+	Points           int32
+	Rating           float64
+	SinglesPoints    int32
+	DoublesPoints    int32
+	Category         string
+	CalculatedAt     pgtype.Timestamptz
+}
+
+type RatingConfig struct {
+	ID           pgtype.UUID
+	Season       int32
+	Version      int32
+	Coefficients []byte
+	ActiveFrom   pgtype.Timestamptz
+	CreatedBy    pgtype.UUID
+	CreatedAt    pgtype.Timestamptz
+}
+
+type RatingEvent struct {
+	ID           pgtype.UUID
+	PlayerID     pgtype.UUID
+	MatchID      pgtype.UUID
+	TournamentID pgtype.UUID
+	Kind         RatingEventKind
+	PointsDelta  int32
+	RatingDelta  float64
+	RatingAfter  float64
+	PointsAfter  int32
+	ConfigID     pgtype.UUID
+	Reason       string
+	CreatedBy    pgtype.UUID
+	CreatedAt    pgtype.Timestamptz
 }
 
 type Registration struct {
