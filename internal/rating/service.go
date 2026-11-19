@@ -18,7 +18,7 @@ var (
 	ErrInvalidManual  = errors.New("invalid manual rating adjustment")
 )
 
-// MatchEloInput applies Elo after a completed/walkover match.
+// MatchEloInput applies Elo after a completed/walkover/retire match.
 type MatchEloInput struct {
 	MatchID      pgtype.UUID
 	TournamentID pgtype.UUID
@@ -27,7 +27,8 @@ type MatchEloInput struct {
 	Side1        []PlayerRating // player + optional partner
 	Side2        []PlayerRating
 	Doubles      bool
-	Walkover     bool
+	Walkover     bool // no-show: Elo skipped when WalkoverElo=false
+	Retire       bool // mid-match retire: Elo with K × RetireEloFactor; full tournament points
 	ActorID      pgtype.UUID
 }
 
@@ -73,12 +74,16 @@ func ApplyMatchElo(ctx context.Context, q *sqlc.Queries, in MatchEloInput) error
 			if exists {
 				continue
 			}
-			k := KFactor(p.MatchesPlayed, in.Doubles, coeffs)
+			k := EffectiveK(p.MatchesPlayed, in.Doubles, in.Retire, coeffs)
 			delta := EloDelta(p.Rating, opponentAvg, k, score)
 			after := ApplyEloFloor(p.Rating+delta, coeffs.MinRating)
 			disc := DisciplineSingles
 			if in.Doubles {
 				disc = DisciplineDoubles
+			}
+			reason := "match result"
+			if in.Retire {
+				reason = "match retire"
 			}
 			if _, err := q.InsertRatingEvent(ctx, sqlc.InsertRatingEventParams{
 				PlayerID:     p.ID,
@@ -91,7 +96,7 @@ func ApplyMatchElo(ctx context.Context, q *sqlc.Queries, in MatchEloInput) error
 				RatingAfter:  after,
 				PointsAfter:  p.Points,
 				ConfigID:     cfg.ID,
-				Reason:       "match result",
+				Reason:       reason,
 				CreatedBy:    in.ActorID,
 			}); err != nil {
 				return err

@@ -119,6 +119,7 @@ func NewWithOptions(opts Options) *Server {
 		r.Patch("/matches/{id}", s.handleUpdateMatchSchedule)
 		r.Post("/matches/{id}/score", s.handleSubmitScore)
 		r.Post("/matches/{id}/walkover", s.handleWalkover)
+		r.Post("/matches/{id}/retire", s.handleRetireMatch)
 		r.Post("/matches/{id}/cancel", s.handleCancelMatch)
 		r.Get("/players", s.handleListOrganizerPlayers)
 		r.Patch("/players/{id}", s.handleUpdateOrganizerPlayer)

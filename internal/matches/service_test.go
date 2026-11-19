@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -431,6 +432,108 @@ func TestFinalScoreCompletesTournamentAndAwards(t *testing.T) {
 	if err != matches.ErrConflict {
 		t.Fatalf("re-finish expected conflict, got %v outcome=%+v", err, outcome2)
 	}
+}
+
+func TestRetireAppliesHalfElo(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	slug := fmt.Sprintf("ret-%d", time.Now().UnixNano())
+	tour := createOpenTournament(t, store, slug, 2)
+	players := confirmPlayers(t, store, tour.ID, 2, slug)
+	actor := createPlayer(t, store, fmt.Sprintf("org-%s@test.local", slug))
+
+	if _, _, err := matches.Generate(ctx, store, matches.GenerateInput{
+		TournamentID: tour.ID, Seeding: "seed", ActorID: actor,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := matches.Publish(ctx, store, tour.ID, actor); err != nil {
+		t.Fatal(err)
+	}
+	all, err := store.Queries.ListMatchesByTournament(ctx, tour.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var final sqlc.Match
+	for _, m := range all {
+		if !m.IsBye && m.Status == sqlc.MatchStatusScheduled && !m.NextMatchID.Valid {
+			final = m
+			break
+		}
+	}
+	if !final.ID.Valid {
+		t.Fatal("no final")
+	}
+
+	before := make(map[string]float64, 2)
+	for _, pid := range players {
+		prof, err := store.Queries.GetProfileByUserID(ctx, pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before[fmt.Sprintf("%x", pid.Bytes)] = prof.Rating
+	}
+
+	outcome, err := matches.Retire(ctx, store, matches.RetireInput{
+		MatchID:    final.ID,
+		WinnerSide: 1,
+		Sets:       []matches.SetScore{{Side1: 4, Side2: 2}},
+		Reason:     "травма",
+		Version:    final.Version,
+		ActorID:    actor,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Match.Status != sqlc.MatchStatusCompleted {
+		t.Fatalf("status=%s want completed", outcome.Match.Status)
+	}
+	if !strings.Contains(outcome.Match.ScoreText.String, "снятие") {
+		t.Fatalf("score_text=%q", outcome.Match.ScoreText.String)
+	}
+
+	events, err := store.Queries.ListRatingEventsByPlayer(ctx, sqlc.ListRatingEventsByPlayerParams{
+		PlayerID: players[0], Limit: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, ev := range events {
+		if ev.MatchID.Valid && ev.Reason == "match retire" {
+			found = true
+			// Equal 1200 start, provisional K=32 → retire K=16 → |delta|=8
+			if absFloat(ev.RatingDelta) < 7.5 || absFloat(ev.RatingDelta) > 8.5 {
+				t.Fatalf("retire delta=%v want ~8", ev.RatingDelta)
+			}
+		}
+	}
+	if !found {
+		// winner might be side1 which is players order from confirm — check both
+		for _, pid := range players {
+			events, _ = store.Queries.ListRatingEventsByPlayer(ctx, sqlc.ListRatingEventsByPlayerParams{
+				PlayerID: pid, Limit: 5,
+			})
+			for _, ev := range events {
+				if ev.Reason == "match retire" {
+					found = true
+					if absFloat(ev.RatingDelta) < 7.5 || absFloat(ev.RatingDelta) > 8.5 {
+						t.Fatalf("retire delta=%v want ~8", ev.RatingDelta)
+					}
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected match retire rating event")
+	}
+}
+
+func absFloat(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func TestRoundRobinCompletesWhenAllMatchesClosed(t *testing.T) {

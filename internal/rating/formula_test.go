@@ -72,6 +72,20 @@ func TestAwardFromWinStats(t *testing.T) {
 	}
 }
 
+func TestEffectiveKRetireHalves(t *testing.T) {
+	full := KFactor(12, false, DefaultCoeffs)
+	if full != 24 {
+		t.Fatalf("base k=%v", full)
+	}
+	got := EffectiveK(12, false, true, DefaultCoeffs)
+	if got != 12 {
+		t.Fatalf("retire k=%v want 12", got)
+	}
+	if EffectiveK(12, false, false, DefaultCoeffs) != full {
+		t.Fatal("non-retire should keep full K")
+	}
+}
+
 func TestEloUpset(t *testing.T) {
 	// A=1400 beats B=1700, both 12 matches → K=24
 	k := KFactor(12, false, DefaultCoeffs)

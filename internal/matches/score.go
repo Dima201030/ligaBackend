@@ -96,6 +96,15 @@ func validSet(set SetScore, allowMatchTB bool) bool {
 }
 
 // ParseSetsJSON unmarshals [[6,4],[6,3]] or [{"side1":6,"side2":4}].
+// FormatPartialScoreText joins set scores for display (no full-match validation).
+func FormatPartialScoreText(sets []SetScore) string {
+	parts := make([]string, 0, len(sets))
+	for _, set := range sets {
+		parts = append(parts, fmt.Sprintf("%d:%d", set.Side1, set.Side2))
+	}
+	return strings.Join(parts, ", ")
+}
+
 func ParseSetsJSON(raw json.RawMessage) ([]SetScore, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, ErrEmptyScore

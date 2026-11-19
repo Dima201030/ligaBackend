@@ -20,6 +20,7 @@ type rawCoefficients struct {
 	WalkoverElo          bool               `json:"walkover_elo"`
 	ConsolationFactor    float64            `json:"consolation_factor"`
 	TeamsShare           float64            `json:"teams_share"`
+	RetireEloFactor      float64            `json:"retire_elo_factor"`
 }
 
 // ParseCoefficients decodes rating_configs.coefficients jsonb.
@@ -45,6 +46,7 @@ func ParseCoefficients(raw []byte) (Coefficients, error) {
 		WalkoverElo:          r.WalkoverElo,
 		ConsolationFactor:    r.ConsolationFactor,
 		TeamsShare:           r.TeamsShare,
+		RetireEloFactor:      r.RetireEloFactor,
 	}
 	for k, v := range r.BaseByWins {
 		n, err := strconv.Atoi(k)
@@ -67,6 +69,18 @@ func ParseCoefficients(raw []byte) (Coefficients, error) {
 	}
 	if c.TournamentType == nil {
 		c.TournamentType = DefaultCoeffs.TournamentType
+	}
+	if c.WalkoverPointsFactor <= 0 {
+		c.WalkoverPointsFactor = DefaultCoeffs.WalkoverPointsFactor
+	}
+	if c.ConsolationFactor <= 0 {
+		c.ConsolationFactor = DefaultCoeffs.ConsolationFactor
+	}
+	if c.TeamsShare <= 0 {
+		c.TeamsShare = DefaultCoeffs.TeamsShare
+	}
+	if c.RetireEloFactor <= 0 {
+		c.RetireEloFactor = DefaultCoeffs.RetireEloFactor
 	}
 	return c, nil
 }

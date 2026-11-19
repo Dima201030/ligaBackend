@@ -36,6 +36,7 @@ var DefaultCoeffs = Coefficients{
 	WalkoverElo:          false,
 	ConsolationFactor:    0.5,
 	TeamsShare:           0.6,
+	RetireEloFactor:      0.5,
 }
 
 // Coefficients mirrors rating_configs.coefficients jsonb.
@@ -53,6 +54,7 @@ type Coefficients struct {
 	WalkoverElo          bool               `json:"walkover_elo"`
 	ConsolationFactor    float64            `json:"consolation_factor"`
 	TeamsShare           float64            `json:"teams_share"`
+	RetireEloFactor      float64            `json:"retire_elo_factor"` // mid-match retire → K × factor
 }
 
 // EloKBands holds singles/doubles K tiers by match count.
@@ -176,6 +178,19 @@ func KFactor(matchesPlayed int, doubles bool, c Coefficients) float64 {
 	default:
 		return tier.Default
 	}
+}
+
+// EffectiveK applies mid-match retire factor (default ×0.5) when retire is set.
+func EffectiveK(matchesPlayed int, doubles, retire bool, c Coefficients) float64 {
+	k := KFactor(matchesPlayed, doubles, c)
+	if !retire {
+		return k
+	}
+	f := c.RetireEloFactor
+	if f <= 0 {
+		f = DefaultCoeffs.RetireEloFactor
+	}
+	return k * f
 }
 
 // EloDelta returns rating change for score S (1 win / 0 loss / 0.5 draw).

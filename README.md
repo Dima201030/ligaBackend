@@ -59,6 +59,7 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | PATCH | `/api/organizer/matches/{id}` | Расписание / корт / live |
 | POST | `/api/organizer/matches/{id}/score` | Счёт по сетам + advance |
 | POST | `/api/organizer/matches/{id}/walkover` | Техническая победа |
+| POST | `/api/organizer/matches/{id}/retire` | Снятие по ходу (Elo K×0.5) |
 | POST | `/api/organizer/matches/{id}/cancel` | Отмена матча |
 | GET | `/api/players` | Публичный список игроков (`category`, `q`, `limit`, `offset`) |
 | GET | `/api/players/{slug}` | Публичный профиль |
@@ -100,8 +101,9 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 double_elimination (порт `src/lib/bracket.ts`).
 
 Рейтинг (этап 6): коэффициенты v1 из `docs/RATING.md` в `rating_configs`
-(сезон 2026). Elo пишется в той же TX, что и счёт/walkover (walkover Elo не
-двигает). Очки турнира — отдельным вызовом `ratings/apply` (идемпотентно).
+(сезон 2026). Elo пишется в той же TX, что и счёт/walkover/retire (walkover Elo не
+двигает; retire — K×`retire_elo_factor`). Очки турнира начисляются при `completed`
+(и вручную через `ratings/apply`, идемпотентно).
 Посев сетки `seeding=rating` читает `profiles.rating`. Снимок таблицы —
 `POST /api/organizer/ratings/snapshot`.
 

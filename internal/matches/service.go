@@ -63,6 +63,17 @@ type WalkoverInput struct {
 	ActorID     pgtype.UUID
 }
 
+// RetireInput awards a win when the opponent retires mid-match.
+// Match is completed (full tournament points); Elo uses K × retire factor.
+type RetireInput struct {
+	MatchID    pgtype.UUID
+	WinnerSide int16 // side that did not retire
+	Sets       []SetScore // optional partial score for display
+	Reason     string
+	Version    int32
+	ActorID    pgtype.UUID
+}
+
 type CancelInput struct {
 	MatchID pgtype.UUID
 	Reason  string
@@ -455,6 +466,40 @@ func Walkover(ctx context.Context, store *db.Store, in WalkoverInput) (FinishOut
 	})
 }
 
+// Retire records a mid-match retirement: completed status (full points), Elo K×0.5.
+func Retire(ctx context.Context, store *db.Store, in RetireInput) (FinishOutcome, error) {
+	if in.WinnerSide != 1 && in.WinnerSide != 2 {
+		return FinishOutcome{}, ErrInvalidWinner
+	}
+	text := "снятие"
+	var setsJSON []byte
+	if len(in.Sets) > 0 {
+		var err error
+		setsJSON, err = SetsToJSON(in.Sets)
+		if err != nil {
+			return FinishOutcome{}, err
+		}
+		text = FormatPartialScoreText(in.Sets) + " · снятие"
+	}
+	diff := map[string]any{"winner_side": in.WinnerSide, "retire": true}
+	if in.Reason != "" {
+		diff["reason"] = in.Reason
+	}
+	raw, _ := json.Marshal(diff)
+	return finishMatch(ctx, store, finishParams{
+		MatchID:    in.MatchID,
+		Status:     sqlc.MatchStatusCompleted,
+		WinnerSide: in.WinnerSide,
+		ScoreSets:  setsJSON,
+		ScoreText:  text,
+		Version:    in.Version,
+		ActorID:    in.ActorID,
+		Action:     "match.retire",
+		AuditDiff:  raw,
+		Retire:     true,
+	})
+}
+
 type finishParams struct {
 	MatchID    pgtype.UUID
 	Status     sqlc.MatchStatus
@@ -465,6 +510,7 @@ type finishParams struct {
 	ActorID    pgtype.UUID
 	Action     string
 	AuditDiff  []byte
+	Retire     bool
 }
 
 func finishMatch(ctx context.Context, store *db.Store, in finishParams) (FinishOutcome, error) {
@@ -710,6 +756,7 @@ func applyMatchRating(ctx context.Context, q *sqlc.Queries, match sqlc.Match, si
 		Side2:        s2,
 		Doubles:      doubles,
 		Walkover:     in.Status == sqlc.MatchStatusWalkover,
+		Retire:       in.Retire,
 		ActorID:      in.ActorID,
 	})
 }
