@@ -270,7 +270,7 @@ func TestApplyTournamentPointsConsolation(t *testing.T) {
 	tour, err := store.Queries.CreateTournament(ctx, sqlc.CreateTournamentParams{
 		Slug: "cs-" + suffix, Title: "Consolation Award Test", Description: "consolation award integration",
 		Type: sqlc.TournamentTypeSingles, Category: "futures",
-		Surface: sqlc.SurfaceTypeHard, Format: sqlc.TournamentFormatDoubleElimination,
+		Surface: sqlc.SurfaceTypeHard, Format: sqlc.TournamentFormatOlympic,
 		Status: sqlc.TournamentStatusCompleted,
 		StartsAt: pgtype.Timestamptz{Time: now.Add(-time.Hour), Valid: true},
 		RegistrationOpensAt:  pgtype.Timestamptz{Time: now.Add(-48 * time.Hour), Valid: true},
@@ -290,10 +290,10 @@ func TestApplyTournamentPointsConsolation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Only lower-bracket wins for p1 (no primary) → consolation factor.
+	// Only consolation-stage wins for p1 (no primary) → consolation factor.
 	match, err := store.Queries.CreateMatch(ctx, sqlc.CreateMatchParams{
-		TournamentID: tour.ID, BracketKey: "LB1M1", Stage: "lower",
-		RoundIndex: 0, Position: 0, RoundLabel: "Нижняя сетка",
+		TournamentID: tour.ID, BracketKey: "CS1M1", Stage: "consolation",
+		RoundIndex: 0, Position: 0, RoundLabel: "Утешительная",
 		Status: sqlc.MatchStatusCompleted,
 		WinnerSide: pgtype.Int2{Int16: 1, Valid: true},
 	})
@@ -325,4 +325,114 @@ func TestApplyTournamentPointsConsolation(t *testing.T) {
 	if int(winner.SinglesPoints) != want {
 		t.Fatalf("points=%d want consolation %d", winner.SinglesPoints, want)
 	}
+}
+
+func TestApplyTournamentPointsDEPlaces(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	mk := func(email string) pgtype.UUID {
+		t.Helper()
+		hash, _ := crypto.HashPassword("password123")
+		user, err := store.Queries.CreateUserVerified(ctx, sqlc.CreateUserVerifiedParams{
+			Email: email, PasswordHash: hash, FirstName: "D", LastName: "E",
+			Role: sqlc.UserRolePlayer, Status: sqlc.UserStatusApproved,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.Queries.CreateProfile(ctx, rating.NewProfileParams(
+			user.ID, pgtype.Text{}, "futures", "D", "E",
+		)); err != nil {
+			t.Fatal(err)
+		}
+		return user.ID
+	}
+	champ := mk("de-c-" + suffix + "@example.com")
+	finalist := mk("de-f-" + suffix + "@example.com")
+	third := mk("de-3-" + suffix + "@example.com")
+	fourth := mk("de-4-" + suffix + "@example.com")
+	now := time.Now().UTC()
+	tour, err := store.Queries.CreateTournament(ctx, sqlc.CreateTournamentParams{
+		Slug: "de-" + suffix, Title: "DE Place Award", Description: "de place-based awards",
+		Type: sqlc.TournamentTypeSingles, Category: "futures",
+		Surface: sqlc.SurfaceTypeHard, Format: sqlc.TournamentFormatDoubleElimination,
+		Status: sqlc.TournamentStatusCompleted,
+		StartsAt: pgtype.Timestamptz{Time: now.Add(-time.Hour), Valid: true},
+		RegistrationOpensAt:  pgtype.Timestamptz{Time: now.Add(-48 * time.Hour), Valid: true},
+		RegistrationClosesAt: pgtype.Timestamptz{Time: now.Add(-2 * time.Hour), Valid: true},
+		VenueName: "C", VenueAddress: "A", VenueCourts: 1, VenueSurface: sqlc.SurfaceTypeHard,
+		EntryFee: 0, MaxParticipants: 4, CoverUrl: pgtype.Text{}, Season: int32(now.Year()), CreatedBy: champ,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pid := range []pgtype.UUID{champ, finalist, third, fourth} {
+		if _, err := store.Queries.CreateRegistration(ctx, sqlc.CreateRegistrationParams{
+			TournamentID: tour.ID, PlayerID: pid,
+			LookingForPartner: false, Status: sqlc.RegistrationStatusConfirmed,
+			ConfirmedAt: pgtype.Timestamptz{Time: now, Valid: true},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mkMatch := func(key, stage string, round, pos int32, wSide int16, a, b pgtype.UUID) {
+		t.Helper()
+		m, err := store.Queries.CreateMatch(ctx, sqlc.CreateMatchParams{
+			TournamentID: tour.ID, BracketKey: key, Stage: stage,
+			RoundIndex: round, Position: pos, RoundLabel: stage,
+			Status: sqlc.MatchStatusCompleted,
+			WinnerSide: pgtype.Int2{Int16: wSide, Valid: true},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for side, pid := range map[int16]pgtype.UUID{1: a, 2: b} {
+			if _, err := store.Queries.CreateMatchSide(ctx, sqlc.CreateMatchSideParams{
+				MatchID: m.ID, Side: side, PlayerID: pid,
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	// LB final: finalist beats third → third = place 3
+	mkMatch("LB1", "lower", 1, 0, 1, finalist, third)
+	// GF: champ beats finalist → places 1 / 2; fourth unplaced → 4
+	mkMatch("GF", "grand_final", 0, 0, 1, champ, finalist)
+
+	want := map[string]int{
+		"champ": rating.TournamentPoints(rating.TournamentPointsInput{
+			Wins: 4, Participants: 4, Category: "futures", Type: "singles",
+		}, rating.DefaultCoeffs),
+		"finalist": rating.TournamentPoints(rating.TournamentPointsInput{
+			Wins: 3, Participants: 4, Category: "futures", Type: "singles",
+		}, rating.DefaultCoeffs),
+		"third": rating.TournamentPoints(rating.TournamentPointsInput{
+			Wins: 2, Participants: 4, Category: "futures", Type: "singles",
+		}, rating.DefaultCoeffs),
+		"fourth": rating.TournamentPoints(rating.TournamentPointsInput{
+			Wins: 2, Participants: 4, Category: "futures", Type: "singles",
+		}, rating.DefaultCoeffs),
+	}
+
+	if _, err := rating.ApplyTournamentPoints(ctx, store, rating.TournamentApplyInput{
+		TournamentID: tour.ID, ActorID: champ,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	check := func(label string, id pgtype.UUID, expect int) {
+		t.Helper()
+		p, err := store.Queries.GetProfileByUserID(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if int(p.SinglesPoints) != expect {
+			t.Fatalf("%s points=%d want %d", label, p.SinglesPoints, expect)
+		}
+	}
+	check("champ", champ, want["champ"])
+	check("finalist", finalist, want["finalist"])
+	check("third", third, want["third"])
+	check("fourth", fourth, want["fourth"])
 }

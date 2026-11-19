@@ -223,6 +223,7 @@ type TournamentApplyInput struct {
 	Season       int32
 	Category     string
 	Type         string
+	Format       string // optional; loaded from tournament when empty
 	ActorID      pgtype.UUID
 }
 
@@ -246,6 +247,22 @@ func ApplyTournamentPoints(ctx context.Context, store *db.Store, in TournamentAp
 // ApplyTournamentPointsTx awards tournament points using an existing queries/tx handle.
 // Idempotent per (tournament, player). Safe to call on every transition into completed.
 func ApplyTournamentPointsTx(ctx context.Context, q *sqlc.Queries, in TournamentApplyInput) (int, error) {
+	tour, err := q.GetTournamentByID(ctx, in.TournamentID)
+	if err != nil {
+		return 0, err
+	}
+	if in.Format == "" {
+		in.Format = string(tour.Format)
+	}
+	if in.Category == "" {
+		in.Category = tour.Category
+	}
+	if in.Type == "" {
+		in.Type = string(tour.Type)
+	}
+	if in.Season == 0 {
+		in.Season = tour.Season
+	}
 	cfg, coeffs, err := loadConfig(ctx, q, in.Season)
 	if err != nil {
 		return 0, err
@@ -258,6 +275,20 @@ func ApplyTournamentPointsTx(ctx context.Context, q *sqlc.Queries, in Tournament
 	if err != nil {
 		return 0, err
 	}
+
+	var dePlaces map[string]int
+	if in.Format == string(sqlc.TournamentFormatDoubleElimination) {
+		matches, err := q.ListMatchesByTournament(ctx, in.TournamentID)
+		if err != nil {
+			return 0, err
+		}
+		sides, err := q.ListMatchSidesByTournament(ctx, in.TournamentID)
+		if err != nil {
+			return 0, err
+		}
+		dePlaces = ComputeDEPlaces(matches, sides, players)
+	}
+
 	applied := 0
 	disc := DisciplineFromTournamentType(in.Type)
 	for _, playerID := range players {
@@ -278,13 +309,23 @@ func ApplyTournamentPointsTx(ctx context.Context, q *sqlc.Queries, in Tournament
 		if err != nil {
 			return 0, err
 		}
-		award := AwardFromWinStats(WinStats{
-			PrimaryWins:             int(rawStats.PrimaryWins),
-			PrimaryWalkoverWins:     int(rawStats.PrimaryWalkoverWins),
-			ConsolationWins:         int(rawStats.ConsolationWins),
-			ConsolationWalkoverWins: int(rawStats.ConsolationWalkoverWins),
-			Disqualified:            rawStats.Disqualified,
-		})
+		var award AwardResult
+		var place int
+		if dePlaces != nil {
+			place = dePlaces[uuidKey(playerID)]
+			award = AwardResult{
+				Wins:         PlaceToEquivalentWins(place),
+				Disqualified: rawStats.Disqualified,
+			}
+		} else {
+			award = AwardFromWinStats(WinStats{
+				PrimaryWins:             int(rawStats.PrimaryWins),
+				PrimaryWalkoverWins:     int(rawStats.PrimaryWalkoverWins),
+				ConsolationWins:         int(rawStats.ConsolationWins),
+				ConsolationWalkoverWins: int(rawStats.ConsolationWalkoverWins),
+				Disqualified:            rawStats.Disqualified,
+			})
+		}
 		pts := TournamentPoints(TournamentPointsInput{
 			Wins:         award.Wins,
 			Participants: int(participants),
@@ -306,6 +347,16 @@ func ApplyTournamentPointsTx(ctx context.Context, q *sqlc.Queries, in Tournament
 			singles += int32(pts)
 		}
 		newPoints := singles + doubles
+		reason := fmt.Sprintf(
+			"tournament wins=%d discipline=%s consolation=%v walkover_only=%v disqualified=%v",
+			award.Wins, disc, award.Consolation, award.WalkoverOnly, award.Disqualified,
+		)
+		if dePlaces != nil {
+			reason = fmt.Sprintf(
+				"tournament de place=%d wins=%d discipline=%s disqualified=%v",
+				place, award.Wins, disc, award.Disqualified,
+			)
+		}
 		if _, err := q.InsertRatingEvent(ctx, sqlc.InsertRatingEventParams{
 			PlayerID:     playerID,
 			MatchID:      pgtype.UUID{},
@@ -317,11 +368,8 @@ func ApplyTournamentPointsTx(ctx context.Context, q *sqlc.Queries, in Tournament
 			RatingAfter:  prof.Rating,
 			PointsAfter:  newPoints,
 			ConfigID:     cfg.ID,
-			Reason: fmt.Sprintf(
-				"tournament wins=%d discipline=%s consolation=%v walkover_only=%v disqualified=%v",
-				award.Wins, disc, award.Consolation, award.WalkoverOnly, award.Disqualified,
-			),
-			CreatedBy: in.ActorID,
+			Reason:       reason,
+			CreatedBy:    in.ActorID,
 		}); err != nil {
 			return 0, err
 		}
