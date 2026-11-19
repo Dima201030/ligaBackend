@@ -85,7 +85,7 @@ FROM matches m
 JOIN match_sides ms ON ms.match_id = m.id
 WHERE m.tournament_id = $1
   AND m.stage IN ('main', 'playoff', 'grand_final')
-  AND m.status IN ('completed', 'walkover')
+  AND m.status IN ('completed', 'walkover', 'disqualified')
   AND m.is_bye = false
   AND ms.side = m.winner_side
   AND (ms.player_id = $2 OR ms.partner_id = $2)
@@ -131,25 +131,39 @@ const getPlayerTournamentWinStats = `-- name: GetPlayerTournamentWinStats :one
 SELECT
     COUNT(*) FILTER (
         WHERE m.stage IN ('main', 'playoff', 'grand_final')
-          AND m.status IN ('completed', 'walkover')
+          AND m.status IN ('completed', 'walkover', 'disqualified')
+          AND ms.side = m.winner_side
     )::int AS primary_wins,
     COUNT(*) FILTER (
         WHERE m.stage IN ('main', 'playoff', 'grand_final')
           AND m.status = 'walkover'
+          AND ms.side = m.winner_side
     )::int AS primary_walkover_wins,
     COUNT(*) FILTER (
         WHERE m.stage IN ('lower', 'consolation')
-          AND m.status IN ('completed', 'walkover')
+          AND m.status IN ('completed', 'walkover', 'disqualified')
+          AND ms.side = m.winner_side
     )::int AS consolation_wins,
     COUNT(*) FILTER (
         WHERE m.stage IN ('lower', 'consolation')
           AND m.status = 'walkover'
-    )::int AS consolation_walkover_wins
+          AND ms.side = m.winner_side
+    )::int AS consolation_walkover_wins,
+    EXISTS (
+        SELECT 1
+        FROM matches dm
+        JOIN match_sides dms ON dms.match_id = dm.id
+        WHERE dm.tournament_id = $1
+          AND dm.status = 'disqualified'
+          AND dm.is_bye = false
+          AND dm.winner_side IS NOT NULL
+          AND dms.side <> dm.winner_side
+          AND (dms.player_id = $2 OR dms.partner_id = $2)
+    ) AS disqualified
 FROM matches m
 JOIN match_sides ms ON ms.match_id = m.id
 WHERE m.tournament_id = $1
   AND m.is_bye = false
-  AND ms.side = m.winner_side
   AND (ms.player_id = $2 OR ms.partner_id = $2)
 `
 
@@ -163,6 +177,7 @@ type GetPlayerTournamentWinStatsRow struct {
 	PrimaryWalkoverWins     int32
 	ConsolationWins         int32
 	ConsolationWalkoverWins int32
+	Disqualified            bool
 }
 
 func (q *Queries) GetPlayerTournamentWinStats(ctx context.Context, arg GetPlayerTournamentWinStatsParams) (GetPlayerTournamentWinStatsRow, error) {
@@ -173,6 +188,7 @@ func (q *Queries) GetPlayerTournamentWinStats(ctx context.Context, arg GetPlayer
 		&i.PrimaryWalkoverWins,
 		&i.ConsolationWins,
 		&i.ConsolationWalkoverWins,
+		&i.Disqualified,
 	)
 	return i, err
 }

@@ -60,6 +60,7 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | POST | `/api/organizer/matches/{id}/score` | Счёт по сетам + advance |
 | POST | `/api/organizer/matches/{id}/walkover` | Техническая победа |
 | POST | `/api/organizer/matches/{id}/retire` | Снятие по ходу (Elo K×0.5) |
+| POST | `/api/organizer/matches/{id}/disqualify` | Дисквалификация (0 очков / полное Elo) |
 | POST | `/api/organizer/matches/{id}/cancel` | Отмена матча |
 | GET | `/api/players` | Публичный список игроков (`category`, `q`, `limit`, `offset`) |
 | GET | `/api/players/{slug}` | Публичный профиль |

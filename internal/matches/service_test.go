@@ -434,6 +434,108 @@ func TestFinalScoreCompletesTournamentAndAwards(t *testing.T) {
 	}
 }
 
+func TestDisqualifyFullEloAndZeroPoints(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	slug := fmt.Sprintf("dq-%d", time.Now().UnixNano())
+	tour := createOpenTournament(t, store, slug, 2)
+	players := confirmPlayers(t, store, tour.ID, 2, slug)
+	actor := createPlayer(t, store, fmt.Sprintf("org-%s@test.local", slug))
+
+	if _, _, err := matches.Generate(ctx, store, matches.GenerateInput{
+		TournamentID: tour.ID, Seeding: "seed", ActorID: actor,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := matches.Publish(ctx, store, tour.ID, actor); err != nil {
+		t.Fatal(err)
+	}
+	all, err := store.Queries.ListMatchesByTournament(ctx, tour.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var final sqlc.Match
+	for _, m := range all {
+		if !m.IsBye && m.Status == sqlc.MatchStatusScheduled && !m.NextMatchID.Valid {
+			final = m
+			break
+		}
+	}
+	if !final.ID.Valid {
+		t.Fatal("no final")
+	}
+
+	sides, err := store.Queries.ListMatchSidesByMatchIDs(ctx, []pgtype.UUID{final.ID})
+	if err != nil || len(sides) != 2 {
+		t.Fatalf("sides: %v len=%d", err, len(sides))
+	}
+	var winnerID, loserID pgtype.UUID
+	for _, s := range sides {
+		if s.Side == 1 {
+			winnerID = s.PlayerID
+		} else {
+			loserID = s.PlayerID
+		}
+	}
+
+	outcome, err := matches.Disqualify(ctx, store, matches.DisqualifyInput{
+		MatchID:    final.ID,
+		WinnerSide: 1,
+		Reason:     "нарушение",
+		Version:    final.Version,
+		ActorID:    actor,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Match.Status != sqlc.MatchStatusDisqualified {
+		t.Fatalf("status=%s", outcome.Match.Status)
+	}
+
+	// Full Elo (~±16 at equal 1200 provisional).
+	var sawDQ bool
+	for _, pid := range []pgtype.UUID{winnerID, loserID} {
+		events, err := store.Queries.ListRatingEventsByPlayer(ctx, sqlc.ListRatingEventsByPlayerParams{
+			PlayerID: pid, Limit: 5,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ev := range events {
+			if ev.Reason == "match dq" {
+				sawDQ = true
+				if absFloat(ev.RatingDelta) < 15 || absFloat(ev.RatingDelta) > 17 {
+					t.Fatalf("dq delta=%v want ~16", ev.RatingDelta)
+				}
+			}
+		}
+	}
+	if !sawDQ {
+		t.Fatal("expected match dq elo events")
+	}
+
+	if !outcome.TournamentCompleted {
+		// Final DQ should auto-complete + award.
+		if _, err := rating.ApplyTournamentPoints(ctx, store, rating.TournamentApplyInput{
+			TournamentID: tour.ID,
+			Season:       tour.Season,
+			Category:     tour.Category,
+			Type:         string(tour.Type),
+			ActorID:      actor,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	loserProf, err := store.Queries.GetProfileByUserID(ctx, loserID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loserProf.Points != 0 || loserProf.SinglesPoints != 0 {
+		t.Fatalf("DQ'd player points=%d singles=%d want 0", loserProf.Points, loserProf.SinglesPoints)
+	}
+	_ = players
+}
+
 func TestRetireAppliesHalfElo(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()

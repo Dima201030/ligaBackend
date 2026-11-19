@@ -168,7 +168,8 @@ CREATE TYPE match_status AS ENUM (
     'completed',
     'cancelled',
     'walkover',
-    'bye'
+    'bye',
+    'disqualified'
 );
 
 CREATE TYPE bracket_status AS ENUM (

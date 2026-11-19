@@ -29,6 +29,7 @@ type MatchEloInput struct {
 	Doubles      bool
 	Walkover     bool // no-show: Elo skipped when WalkoverElo=false
 	Retire       bool // mid-match retire: Elo with K × RetireEloFactor; full tournament points
+	Disqualify   bool // DQ: full K win/loss; DQ'd player gets 0 tournament points at award
 	ActorID      pgtype.UUID
 }
 
@@ -82,8 +83,11 @@ func ApplyMatchElo(ctx context.Context, q *sqlc.Queries, in MatchEloInput) error
 				disc = DisciplineDoubles
 			}
 			reason := "match result"
-			if in.Retire {
+			switch {
+			case in.Retire:
 				reason = "match retire"
+			case in.Disqualify:
+				reason = "match dq"
 			}
 			if _, err := q.InsertRatingEvent(ctx, sqlc.InsertRatingEventParams{
 				PlayerID:     p.ID,
@@ -274,19 +278,21 @@ func ApplyTournamentPointsTx(ctx context.Context, q *sqlc.Queries, in Tournament
 		if err != nil {
 			return 0, err
 		}
-		wins, consolation, walkoverOnly := AwardFromWinStats(WinStats{
+		award := AwardFromWinStats(WinStats{
 			PrimaryWins:             int(rawStats.PrimaryWins),
 			PrimaryWalkoverWins:     int(rawStats.PrimaryWalkoverWins),
 			ConsolationWins:         int(rawStats.ConsolationWins),
 			ConsolationWalkoverWins: int(rawStats.ConsolationWalkoverWins),
+			Disqualified:            rawStats.Disqualified,
 		})
 		pts := TournamentPoints(TournamentPointsInput{
-			Wins:         wins,
+			Wins:         award.Wins,
 			Participants: int(participants),
 			Category:     in.Category,
 			Type:         in.Type,
-			Consolation:  consolation,
-			WalkoverOnly: walkoverOnly,
+			Consolation:  award.Consolation,
+			WalkoverOnly: award.WalkoverOnly,
+			Disqualified: award.Disqualified,
 		}, coeffs)
 		prof, err := q.LockProfileForUpdate(ctx, playerID)
 		if err != nil {
@@ -312,8 +318,8 @@ func ApplyTournamentPointsTx(ctx context.Context, q *sqlc.Queries, in Tournament
 			PointsAfter:  newPoints,
 			ConfigID:     cfg.ID,
 			Reason: fmt.Sprintf(
-				"tournament wins=%d discipline=%s consolation=%v walkover_only=%v",
-				wins, disc, consolation, walkoverOnly,
+				"tournament wins=%d discipline=%s consolation=%v walkover_only=%v disqualified=%v",
+				award.Wins, disc, award.Consolation, award.WalkoverOnly, award.Disqualified,
 			),
 			CreatedBy: in.ActorID,
 		}); err != nil {

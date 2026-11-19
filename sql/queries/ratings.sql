@@ -130,7 +130,7 @@ FROM matches m
 JOIN match_sides ms ON ms.match_id = m.id
 WHERE m.tournament_id = $1
   AND m.stage IN ('main', 'playoff', 'grand_final')
-  AND m.status IN ('completed', 'walkover')
+  AND m.status IN ('completed', 'walkover', 'disqualified')
   AND m.is_bye = false
   AND ms.side = m.winner_side
   AND (ms.player_id = $2 OR ms.partner_id = $2);
@@ -139,25 +139,39 @@ WHERE m.tournament_id = $1
 SELECT
     COUNT(*) FILTER (
         WHERE m.stage IN ('main', 'playoff', 'grand_final')
-          AND m.status IN ('completed', 'walkover')
+          AND m.status IN ('completed', 'walkover', 'disqualified')
+          AND ms.side = m.winner_side
     )::int AS primary_wins,
     COUNT(*) FILTER (
         WHERE m.stage IN ('main', 'playoff', 'grand_final')
           AND m.status = 'walkover'
+          AND ms.side = m.winner_side
     )::int AS primary_walkover_wins,
     COUNT(*) FILTER (
         WHERE m.stage IN ('lower', 'consolation')
-          AND m.status IN ('completed', 'walkover')
+          AND m.status IN ('completed', 'walkover', 'disqualified')
+          AND ms.side = m.winner_side
     )::int AS consolation_wins,
     COUNT(*) FILTER (
         WHERE m.stage IN ('lower', 'consolation')
           AND m.status = 'walkover'
-    )::int AS consolation_walkover_wins
+          AND ms.side = m.winner_side
+    )::int AS consolation_walkover_wins,
+    EXISTS (
+        SELECT 1
+        FROM matches dm
+        JOIN match_sides dms ON dms.match_id = dm.id
+        WHERE dm.tournament_id = sqlc.arg(tournament_id)
+          AND dm.status = 'disqualified'
+          AND dm.is_bye = false
+          AND dm.winner_side IS NOT NULL
+          AND dms.side <> dm.winner_side
+          AND (dms.player_id = sqlc.arg(player_id) OR dms.partner_id = sqlc.arg(player_id))
+    ) AS disqualified
 FROM matches m
 JOIN match_sides ms ON ms.match_id = m.id
 WHERE m.tournament_id = sqlc.arg(tournament_id)
   AND m.is_bye = false
-  AND ms.side = m.winner_side
   AND (ms.player_id = sqlc.arg(player_id) OR ms.partner_id = sqlc.arg(player_id));
 
 -- name: CountConfirmedParticipants :one

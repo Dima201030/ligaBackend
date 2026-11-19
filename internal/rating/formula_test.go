@@ -51,24 +51,32 @@ func TestTournamentPointsExamples(t *testing.T) {
 
 func TestAwardFromWinStats(t *testing.T) {
 	cases := []struct {
-		name                    string
-		stats                   WinStats
-		wins                    int
-		consolation, walkoverOnly bool
+		name  string
+		stats WinStats
+		want  AwardResult
 	}{
-		{"primary preferred", WinStats{PrimaryWins: 2, ConsolationWins: 3}, 2, false, false},
-		{"primary all walkover", WinStats{PrimaryWins: 2, PrimaryWalkoverWins: 2}, 2, false, true},
-		{"primary mixed walkover", WinStats{PrimaryWins: 2, PrimaryWalkoverWins: 1}, 2, false, false},
-		{"consolation only", WinStats{ConsolationWins: 3}, 3, true, false},
-		{"consolation walkover only", WinStats{ConsolationWins: 2, ConsolationWalkoverWins: 2}, 2, true, true},
-		{"no wins", WinStats{}, 0, false, false},
+		{"primary preferred", WinStats{PrimaryWins: 2, ConsolationWins: 3}, AwardResult{Wins: 2}},
+		{"primary all walkover", WinStats{PrimaryWins: 2, PrimaryWalkoverWins: 2}, AwardResult{Wins: 2, WalkoverOnly: true}},
+		{"primary mixed walkover", WinStats{PrimaryWins: 2, PrimaryWalkoverWins: 1}, AwardResult{Wins: 2}},
+		{"consolation only", WinStats{ConsolationWins: 3}, AwardResult{Wins: 3, Consolation: true}},
+		{"consolation walkover only", WinStats{ConsolationWins: 2, ConsolationWalkoverWins: 2}, AwardResult{Wins: 2, Consolation: true, WalkoverOnly: true}},
+		{"no wins", WinStats{}, AwardResult{}},
+		{"dq zeros", WinStats{PrimaryWins: 3, Disqualified: true}, AwardResult{Disqualified: true}},
 	}
 	for _, tc := range cases {
-		w, c, wo := AwardFromWinStats(tc.stats)
-		if w != tc.wins || c != tc.consolation || wo != tc.walkoverOnly {
-			t.Fatalf("%s: got wins=%d consol=%v wo=%v want %d %v %v",
-				tc.name, w, c, wo, tc.wins, tc.consolation, tc.walkoverOnly)
+		got := AwardFromWinStats(tc.stats)
+		if got != tc.want {
+			t.Fatalf("%s: got %+v want %+v", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestTournamentPointsDisqualifiedZero(t *testing.T) {
+	got := TournamentPoints(TournamentPointsInput{
+		Wins: 4, Participants: 16, Category: "futures", Type: "singles", Disqualified: true,
+	}, DefaultCoeffs)
+	if got != 0 {
+		t.Fatalf("got %d", got)
 	}
 }
 

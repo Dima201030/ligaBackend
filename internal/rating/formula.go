@@ -104,6 +104,7 @@ type TournamentPointsInput struct {
 	Type         string // singles|doubles|mixed|cup|final|teams
 	Consolation  bool
 	WalkoverOnly bool // technical wins only → half points, no Elo elsewhere
+	Disqualified bool // DQ'd in tournament → 0 points
 }
 
 // WinStats is primary vs consolation win breakdown for one player in a tournament.
@@ -112,27 +113,45 @@ type WinStats struct {
 	PrimaryWalkoverWins     int
 	ConsolationWins         int
 	ConsolationWalkoverWins int
+	Disqualified            bool // lost a disqualified match → 0 tournament points
+}
+
+// AwardResult is the tournament points input derived from win stats.
+type AwardResult struct {
+	Wins         int
+	Consolation  bool
+	WalkoverOnly bool
+	Disqualified bool
 }
 
 // AwardFromWinStats picks the counting draw and flags for TournamentPoints.
-// Primary draw wins win if any; otherwise consolation (lower) wins with Consolation=true.
+// Disqualified players get 0 points. Otherwise primary wins if any; else consolation.
 // WalkoverOnly when every counting win is a walkover (anti-farm).
-func AwardFromWinStats(stats WinStats) (wins int, consolation, walkoverOnly bool) {
+func AwardFromWinStats(stats WinStats) AwardResult {
+	if stats.Disqualified {
+		return AwardResult{Disqualified: true}
+	}
 	if stats.PrimaryWins > 0 {
-		wins = stats.PrimaryWins
-		walkoverOnly = stats.PrimaryWalkoverWins == stats.PrimaryWins
-		return wins, false, walkoverOnly
+		return AwardResult{
+			Wins:         stats.PrimaryWins,
+			WalkoverOnly: stats.PrimaryWalkoverWins == stats.PrimaryWins,
+		}
 	}
 	if stats.ConsolationWins > 0 {
-		wins = stats.ConsolationWins
-		walkoverOnly = stats.ConsolationWalkoverWins == stats.ConsolationWins
-		return wins, true, walkoverOnly
+		return AwardResult{
+			Wins:         stats.ConsolationWins,
+			Consolation:  true,
+			WalkoverOnly: stats.ConsolationWalkoverWins == stats.ConsolationWins,
+		}
 	}
-	return 0, false, false
+	return AwardResult{}
 }
 
 // TournamentPoints computes rounded points for one tournament result.
 func TournamentPoints(in TournamentPointsInput, c Coefficients) int {
+	if in.Disqualified {
+		return 0
+	}
 	if c.Category == nil {
 		c = DefaultCoeffs
 	}

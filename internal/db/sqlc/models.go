@@ -189,12 +189,13 @@ func (ns NullEmailOutboxStatus) Value() (driver.Value, error) {
 type MatchStatus string
 
 const (
-	MatchStatusScheduled MatchStatus = "scheduled"
-	MatchStatusLive      MatchStatus = "live"
-	MatchStatusCompleted MatchStatus = "completed"
-	MatchStatusCancelled MatchStatus = "cancelled"
-	MatchStatusWalkover  MatchStatus = "walkover"
-	MatchStatusBye       MatchStatus = "bye"
+	MatchStatusScheduled    MatchStatus = "scheduled"
+	MatchStatusLive         MatchStatus = "live"
+	MatchStatusCompleted    MatchStatus = "completed"
+	MatchStatusCancelled    MatchStatus = "cancelled"
+	MatchStatusWalkover     MatchStatus = "walkover"
+	MatchStatusBye          MatchStatus = "bye"
+	MatchStatusDisqualified MatchStatus = "disqualified"
 )
 
 func (e *MatchStatus) Scan(src interface{}) error {

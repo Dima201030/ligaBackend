@@ -121,7 +121,7 @@ const countResultMatches = `-- name: CountResultMatches :one
 SELECT COUNT(*)::int AS count
 FROM matches
 WHERE tournament_id = $1
-  AND status IN ('completed', 'walkover')
+  AND status IN ('completed', 'walkover', 'disqualified')
 `
 
 func (q *Queries) CountResultMatches(ctx context.Context, tournamentID pgtype.UUID) (int32, error) {
@@ -555,6 +555,7 @@ ORDER BY
         WHEN 'scheduled' THEN 1
         WHEN 'completed' THEN 2
         WHEN 'walkover' THEN 3
+        WHEN 'disqualified' THEN 3
         ELSE 4
     END,
     m.scheduled_at ASC NULLS LAST,

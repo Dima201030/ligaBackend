@@ -42,6 +42,12 @@ type retireRequest struct {
 	Version    int32           `json:"version"`
 }
 
+type disqualifyRequest struct {
+	WinnerSide int16  `json:"winner_side"`
+	Reason     string `json:"reason"`
+	Version    int32  `json:"version"`
+}
+
 type cancelMatchRequest struct {
 	Reason  string `json:"reason"`
 	Version int32  `json:"version"`
@@ -412,6 +418,50 @@ func (s *Server) handleRetireMatch(w http.ResponseWriter, r *http.Request) {
 		MatchID:    id,
 		WinnerSide: body.WinnerSide,
 		Sets:       sets,
+		Reason:     strings.TrimSpace(body.Reason),
+		Version:    body.Version,
+		ActorID:    actor.ID,
+	})
+	if err != nil {
+		s.writeMatchMutationError(w, err)
+		return
+	}
+	list, _ := s.loadMatchesByIDs(r, []pgtype.UUID{outcome.Match.ID})
+	resp := map[string]any{}
+	if len(list) == 0 {
+		resp["match"] = matchFromRow(outcome.Match, nil, nil)
+	} else {
+		resp["match"] = list[0]
+	}
+	if outcome.TournamentWentLive {
+		resp["tournament_went_live"] = true
+	}
+	if outcome.TournamentCompleted {
+		resp["tournament_completed"] = true
+		resp["ratings_applied"] = outcome.RatingsApplied
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleDisqualifyMatch(w http.ResponseWriter, r *http.Request) {
+	actor := auth.UserFromContext(r.Context())
+	if actor == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
+		return
+	}
+	id, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор")
+		return
+	}
+	var body disqualifyRequest
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Некорректное тело запроса")
+		return
+	}
+	outcome, err := matches.Disqualify(r.Context(), s.store, matches.DisqualifyInput{
+		MatchID:    id,
+		WinnerSide: body.WinnerSide,
 		Reason:     strings.TrimSpace(body.Reason),
 		Version:    body.Version,
 		ActorID:    actor.ID,

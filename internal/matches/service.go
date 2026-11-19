@@ -74,6 +74,16 @@ type RetireInput struct {
 	ActorID    pgtype.UUID
 }
 
+// DisqualifyInput awards the match to winner_side after opponent DQ.
+// Elo: full K win/loss. DQ'd player gets 0 tournament points for the event.
+type DisqualifyInput struct {
+	MatchID    pgtype.UUID
+	WinnerSide int16 // side that was not disqualified
+	Reason     string
+	Version    int32
+	ActorID    pgtype.UUID
+}
+
 type CancelInput struct {
 	MatchID pgtype.UUID
 	Reason  string
@@ -500,6 +510,29 @@ func Retire(ctx context.Context, store *db.Store, in RetireInput) (FinishOutcome
 	})
 }
 
+// Disqualify records a DQ: status disqualified, full Elo, zero points for the loser at award time.
+func Disqualify(ctx context.Context, store *db.Store, in DisqualifyInput) (FinishOutcome, error) {
+	if in.WinnerSide != 1 && in.WinnerSide != 2 {
+		return FinishOutcome{}, ErrInvalidWinner
+	}
+	diff := map[string]any{"winner_side": in.WinnerSide, "disqualified": true}
+	if in.Reason != "" {
+		diff["reason"] = in.Reason
+	}
+	raw, _ := json.Marshal(diff)
+	return finishMatch(ctx, store, finishParams{
+		MatchID:    in.MatchID,
+		Status:     sqlc.MatchStatusDisqualified,
+		WinnerSide: in.WinnerSide,
+		ScoreSets:  nil,
+		ScoreText:  "дисквалификация",
+		Version:    in.Version,
+		ActorID:    in.ActorID,
+		Action:     "match.disqualify",
+		AuditDiff:  raw,
+	})
+}
+
 type finishParams struct {
 	MatchID    pgtype.UUID
 	Status     sqlc.MatchStatus
@@ -531,7 +564,7 @@ func finishMatch(ctx context.Context, store *db.Store, in finishParams) (FinishO
 	switch match.Status {
 	case sqlc.MatchStatusScheduled, sqlc.MatchStatusLive:
 		// playable
-	case sqlc.MatchStatusCompleted, sqlc.MatchStatusWalkover:
+	case sqlc.MatchStatusCompleted, sqlc.MatchStatusWalkover, sqlc.MatchStatusDisqualified:
 		// Another writer already finished — treat as optimistic conflict.
 		return FinishOutcome{}, ErrConflict
 	default:
@@ -757,6 +790,7 @@ func applyMatchRating(ctx context.Context, q *sqlc.Queries, match sqlc.Match, si
 		Doubles:      doubles,
 		Walkover:     in.Status == sqlc.MatchStatusWalkover,
 		Retire:       in.Retire,
+		Disqualify:   in.Status == sqlc.MatchStatusDisqualified,
 		ActorID:      in.ActorID,
 	})
 }
@@ -773,7 +807,8 @@ func advanceSide(ctx context.Context, q *sqlc.Queries, nextMatchID pgtype.UUID, 
 		}
 		return err
 	}
-	if dest.Status == sqlc.MatchStatusCompleted || dest.Status == sqlc.MatchStatusWalkover || dest.Status == sqlc.MatchStatusCancelled {
+	if dest.Status == sqlc.MatchStatusCompleted || dest.Status == sqlc.MatchStatusWalkover ||
+		dest.Status == sqlc.MatchStatusDisqualified || dest.Status == sqlc.MatchStatusCancelled {
 		return ErrConflict
 	}
 
