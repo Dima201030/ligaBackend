@@ -166,7 +166,7 @@ func TestGenerateByeAndScoreAdvance(t *testing.T) {
 		t.Fatal("no playable first-round match")
 	}
 
-	updated, err := matches.SubmitScore(ctx, store, matches.ScoreInput{
+	outcome, err := matches.SubmitScore(ctx, store, matches.ScoreInput{
 		MatchID: playable.ID,
 		Sets: []matches.SetScore{
 			{Side1: 6, Side2: 4},
@@ -178,8 +178,12 @@ func TestGenerateByeAndScoreAdvance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	updated := outcome.Match
 	if updated.Status != sqlc.MatchStatusCompleted || !updated.WinnerSide.Valid {
 		t.Fatalf("status=%s winner=%v", updated.Status, updated.WinnerSide)
+	}
+	if outcome.TournamentCompleted {
+		t.Fatal("first-round match must not complete the tournament")
 	}
 
 	if !playable.NextMatchID.Valid {
@@ -303,5 +307,118 @@ func TestParallelScoreConflict(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("next slot player count=%d", count)
+	}
+}
+
+func TestFinalScoreCompletesTournamentAndAwards(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	slug := fmt.Sprintf("final-%d", time.Now().UnixNano())
+	tour := createOpenTournament(t, store, slug, 2)
+	players := confirmPlayers(t, store, tour.ID, 2, slug)
+	actor := createPlayer(t, store, fmt.Sprintf("org-%s@test.local", slug))
+
+	// Mark live so complete-if-active is realistic.
+	if _, err := store.Queries.UpdateTournament(ctx, sqlc.UpdateTournamentParams{
+		ID:                   tour.ID,
+		Title:                tour.Title,
+		Description:          tour.Description,
+		Type:                 tour.Type,
+		Category:             tour.Category,
+		Surface:              tour.Surface,
+		Format:               tour.Format,
+		Status:               sqlc.TournamentStatusLive,
+		StartsAt:             tour.StartsAt,
+		EndsAt:               tour.EndsAt,
+		RegistrationOpensAt:  tour.RegistrationOpensAt,
+		RegistrationClosesAt: tour.RegistrationClosesAt,
+		VenueName:            tour.VenueName,
+		VenueAddress:         tour.VenueAddress,
+		VenueCourts:          tour.VenueCourts,
+		VenueSurface:         tour.VenueSurface,
+		EntryFee:             tour.EntryFee,
+		MaxParticipants:      tour.MaxParticipants,
+		CoverUrl:             tour.CoverUrl,
+		Season:               tour.Season,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := matches.Generate(ctx, store, matches.GenerateInput{
+		TournamentID: tour.ID,
+		Seeding:      "seed",
+		ActorID:      actor,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := matches.Publish(ctx, store, tour.ID, actor); err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := store.Queries.ListMatchesByTournament(ctx, tour.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var final *sqlc.Match
+	for i := range all {
+		m := all[i]
+		if m.IsBye || m.Status != sqlc.MatchStatusScheduled {
+			continue
+		}
+		if !m.NextMatchID.Valid && m.Stage == "main" {
+			final = &m
+			break
+		}
+	}
+	if final == nil {
+		t.Fatal("expected championship final match")
+	}
+
+	outcome, err := matches.SubmitScore(ctx, store, matches.ScoreInput{
+		MatchID: final.ID,
+		Sets: []matches.SetScore{
+			{Side1: 6, Side2: 1},
+			{Side1: 6, Side2: 2},
+		},
+		Version: final.Version,
+		ActorID: actor,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !outcome.TournamentCompleted {
+		t.Fatal("expected tournament_completed")
+	}
+	if outcome.RatingsApplied < 2 {
+		t.Fatalf("ratings_applied=%d want >=2", outcome.RatingsApplied)
+	}
+
+	got, err := store.Queries.GetTournamentByID(ctx, tour.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != sqlc.TournamentStatusCompleted {
+		t.Fatalf("status=%s", got.Status)
+	}
+
+	for _, pid := range players {
+		prof, err := store.Queries.GetProfileByUserID(ctx, pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if prof.Points <= 0 && prof.SinglesPoints <= 0 {
+			t.Fatalf("player %v got no points", pid.Bytes)
+		}
+	}
+
+	// Third-place / non-final must not re-complete (idempotent path): already completed.
+	outcome2, err := matches.Walkover(ctx, store, matches.WalkoverInput{
+		MatchID:    final.ID,
+		WinnerSide: 1,
+		Version:    outcome.Match.Version,
+		ActorID:    actor,
+	})
+	if err != matches.ErrConflict {
+		t.Fatalf("re-finish expected conflict, got %v outcome=%+v", err, outcome2)
 	}
 }

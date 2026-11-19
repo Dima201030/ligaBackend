@@ -293,7 +293,7 @@ func (s *Server) handleSubmitScore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation", russianScoreErr(err))
 		return
 	}
-	updated, err := matches.SubmitScore(r.Context(), s.store, matches.ScoreInput{
+	outcome, err := matches.SubmitScore(r.Context(), s.store, matches.ScoreInput{
 		MatchID: id,
 		Sets:    sets,
 		Version: body.Version,
@@ -303,12 +303,18 @@ func (s *Server) handleSubmitScore(w http.ResponseWriter, r *http.Request) {
 		s.writeMatchMutationError(w, err)
 		return
 	}
-	list, _ := s.loadMatchesByIDs(r, []pgtype.UUID{updated.ID})
+	list, _ := s.loadMatchesByIDs(r, []pgtype.UUID{outcome.Match.ID})
+	resp := map[string]any{}
 	if len(list) == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"match": matchFromRow(updated, nil, nil)})
-		return
+		resp["match"] = matchFromRow(outcome.Match, nil, nil)
+	} else {
+		resp["match"] = list[0]
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"match": list[0]})
+	if outcome.TournamentCompleted {
+		resp["tournament_completed"] = true
+		resp["ratings_applied"] = outcome.RatingsApplied
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleWalkover(w http.ResponseWriter, r *http.Request) {
@@ -327,7 +333,7 @@ func (s *Server) handleWalkover(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Некорректное тело запроса")
 		return
 	}
-	updated, err := matches.Walkover(r.Context(), s.store, matches.WalkoverInput{
+	outcome, err := matches.Walkover(r.Context(), s.store, matches.WalkoverInput{
 		MatchID:    id,
 		WinnerSide: body.WinnerSide,
 		Reason:     strings.TrimSpace(body.Reason),
@@ -338,12 +344,18 @@ func (s *Server) handleWalkover(w http.ResponseWriter, r *http.Request) {
 		s.writeMatchMutationError(w, err)
 		return
 	}
-	list, _ := s.loadMatchesByIDs(r, []pgtype.UUID{updated.ID})
+	list, _ := s.loadMatchesByIDs(r, []pgtype.UUID{outcome.Match.ID})
+	resp := map[string]any{}
 	if len(list) == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"match": matchFromRow(updated, nil, nil)})
-		return
+		resp["match"] = matchFromRow(outcome.Match, nil, nil)
+	} else {
+		resp["match"] = list[0]
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"match": list[0]})
+	if outcome.TournamentCompleted {
+		resp["tournament_completed"] = true
+		resp["ratings_applied"] = outcome.RatingsApplied
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleCancelMatch(w http.ResponseWriter, r *http.Request) {

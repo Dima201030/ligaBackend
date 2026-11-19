@@ -400,15 +400,24 @@ func Publish(ctx context.Context, store *db.Store, tournamentID, actorID pgtype.
 	return tour, nil
 }
 
+// FinishOutcome is the result of submitting a score or walkover.
+type FinishOutcome struct {
+	Match               sqlc.Match
+	TournamentCompleted bool
+	RatingsApplied      int
+}
+
 // SubmitScore records a set score and advances the winner (and loser to 3rd place if wired).
-func SubmitScore(ctx context.Context, store *db.Store, in ScoreInput) (sqlc.Match, error) {
+// When the championship final is finished, the tournament is set to completed and
+// tournament rating points are awarded (idempotent).
+func SubmitScore(ctx context.Context, store *db.Store, in ScoreInput) (FinishOutcome, error) {
 	winner, text, err := ValidateAndDecideWinner(in.Sets)
 	if err != nil {
-		return sqlc.Match{}, err
+		return FinishOutcome{}, err
 	}
 	setsJSON, err := SetsToJSON(in.Sets)
 	if err != nil {
-		return sqlc.Match{}, err
+		return FinishOutcome{}, err
 	}
 	return finishMatch(ctx, store, finishParams{
 		MatchID:    in.MatchID,
@@ -423,9 +432,9 @@ func SubmitScore(ctx context.Context, store *db.Store, in ScoreInput) (sqlc.Matc
 }
 
 // Walkover awards a technical win without set score.
-func Walkover(ctx context.Context, store *db.Store, in WalkoverInput) (sqlc.Match, error) {
+func Walkover(ctx context.Context, store *db.Store, in WalkoverInput) (FinishOutcome, error) {
 	if in.WinnerSide != 1 && in.WinnerSide != 2 {
-		return sqlc.Match{}, ErrInvalidWinner
+		return FinishOutcome{}, ErrInvalidWinner
 	}
 	diff := map[string]any{"winner_side": in.WinnerSide}
 	if in.Reason != "" {
@@ -457,10 +466,10 @@ type finishParams struct {
 	AuditDiff  []byte
 }
 
-func finishMatch(ctx context.Context, store *db.Store, in finishParams) (sqlc.Match, error) {
+func finishMatch(ctx context.Context, store *db.Store, in finishParams) (FinishOutcome, error) {
 	tx, err := store.Pool.Begin(ctx)
 	if err != nil {
-		return sqlc.Match{}, err
+		return FinishOutcome{}, err
 	}
 	defer tx.Rollback(ctx)
 	q := store.Queries.WithTx(tx)
@@ -468,33 +477,33 @@ func finishMatch(ctx context.Context, store *db.Store, in finishParams) (sqlc.Ma
 	match, err := q.LockMatchByID(ctx, in.MatchID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return sqlc.Match{}, ErrMatchNotFound
+			return FinishOutcome{}, ErrMatchNotFound
 		}
-		return sqlc.Match{}, err
+		return FinishOutcome{}, err
 	}
 	switch match.Status {
 	case sqlc.MatchStatusScheduled, sqlc.MatchStatusLive:
 		// playable
 	case sqlc.MatchStatusCompleted, sqlc.MatchStatusWalkover:
 		// Another writer already finished — treat as optimistic conflict.
-		return sqlc.Match{}, ErrConflict
+		return FinishOutcome{}, ErrConflict
 	default:
-		return sqlc.Match{}, ErrMatchNotPlayable
+		return FinishOutcome{}, ErrMatchNotPlayable
 	}
 	if match.Version != in.Version {
-		return sqlc.Match{}, ErrConflict
+		return FinishOutcome{}, ErrConflict
 	}
 
 	sides, err := q.ListMatchSidesByMatchIDs(ctx, []pgtype.UUID{match.ID})
 	if err != nil {
-		return sqlc.Match{}, err
+		return FinishOutcome{}, err
 	}
 	side1, side2, ok := pairSides(sides)
 	if !ok {
-		return sqlc.Match{}, ErrSideIncomplete
+		return FinishOutcome{}, ErrSideIncomplete
 	}
 	if !side1.PlayerID.Valid || !side2.PlayerID.Valid {
-		return sqlc.Match{}, ErrSideIncomplete
+		return FinishOutcome{}, ErrSideIncomplete
 	}
 
 	var scoreSets []byte = in.ScoreSets
@@ -511,9 +520,9 @@ func finishMatch(ctx context.Context, store *db.Store, in finishParams) (sqlc.Ma
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return sqlc.Match{}, ErrConflict
+			return FinishOutcome{}, ErrConflict
 		}
-		return sqlc.Match{}, err
+		return FinishOutcome{}, err
 	}
 
 	winner := side1
@@ -524,23 +533,35 @@ func finishMatch(ctx context.Context, store *db.Store, in finishParams) (sqlc.Ma
 	}
 
 	if err := advanceSide(ctx, q, match.NextMatchID, match.NextSlot, winner); err != nil {
-		return sqlc.Match{}, err
+		return FinishOutcome{}, err
 	}
 	if err := advanceSide(ctx, q, match.LoserNextMatchID, match.LoserNextSlot, loser); err != nil {
-		return sqlc.Match{}, err
+		return FinishOutcome{}, err
 	}
 
 	if err := applyMatchRating(ctx, q, match, side1, side2, in); err != nil {
-		return sqlc.Match{}, err
+		return FinishOutcome{}, err
+	}
+
+	out := FinishOutcome{Match: updated}
+	if isChampionshipFinal(match) {
+		tour, err := maybeCompleteAndAward(ctx, q, match.TournamentID, in.ActorID)
+		if err != nil {
+			return FinishOutcome{}, err
+		}
+		out.TournamentCompleted = tour.completed
+		out.RatingsApplied = tour.ratingsApplied
 	}
 
 	diff := in.AuditDiff
 	if diff == nil {
 		diff, _ = json.Marshal(map[string]any{
-			"status":      in.Status,
-			"winner_side": in.WinnerSide,
-			"score":       in.ScoreText,
-			"version":     in.Version,
+			"status":               in.Status,
+			"winner_side":          in.WinnerSide,
+			"score":                in.ScoreText,
+			"version":              in.Version,
+			"tournament_completed": out.TournamentCompleted,
+			"ratings_applied":      out.RatingsApplied,
 		})
 	}
 	_, _ = q.InsertAuditLog(ctx, sqlc.InsertAuditLogParams{
@@ -552,9 +573,55 @@ func finishMatch(ctx context.Context, store *db.Store, in finishParams) (sqlc.Ma
 	})
 
 	if err := tx.Commit(ctx); err != nil {
-		return sqlc.Match{}, err
+		return FinishOutcome{}, err
 	}
-	return updated, nil
+	return out, nil
+}
+
+// isChampionshipFinal reports whether finishing this match crowns a tournament winner.
+// Olympic/playoff final: main|playoff with no next match. Double-elim: grand_final.
+// Third-place, lower-bracket, and group matches are never finals.
+func isChampionshipFinal(m sqlc.Match) bool {
+	switch m.Stage {
+	case "grand_final":
+		return true
+	case "third_place", "lower", "group":
+		return false
+	case "main", "playoff", "":
+		return !m.NextMatchID.Valid
+	default:
+		return false
+	}
+}
+
+type completeAwardResult struct {
+	completed      bool
+	ratingsApplied int
+}
+
+func maybeCompleteAndAward(ctx context.Context, q *sqlc.Queries, tournamentID, actorID pgtype.UUID) (completeAwardResult, error) {
+	tour, err := q.CompleteTournamentIfActive(ctx, tournamentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return completeAwardResult{}, nil
+		}
+		return completeAwardResult{}, err
+	}
+	n, err := rating.ApplyTournamentPointsTx(ctx, q, rating.TournamentApplyInput{
+		TournamentID: tour.ID,
+		Season:       tour.Season,
+		Category:     tour.Category,
+		Type:         string(tour.Type),
+		ActorID:      actorID,
+	})
+	if err != nil {
+		if errors.Is(err, rating.ErrConfigNotFound) {
+			// Match + completed status stay; organizer can apply ratings after config exists.
+			return completeAwardResult{completed: true}, nil
+		}
+		return completeAwardResult{}, err
+	}
+	return completeAwardResult{completed: true, ratingsApplied: n}, nil
 }
 
 func applyMatchRating(ctx context.Context, q *sqlc.Queries, match sqlc.Match, side1, side2 sqlc.MatchSide, in finishParams) error {

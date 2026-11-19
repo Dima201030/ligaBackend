@@ -46,6 +46,14 @@ SELECT * FROM tournaments WHERE slug = $1;
 -- name: LockTournamentByID :one
 SELECT * FROM tournaments WHERE id = $1 FOR UPDATE;
 
+-- name: CompleteTournamentIfActive :one
+UPDATE tournaments
+SET status = 'completed',
+    updated_at = now()
+WHERE id = $1
+  AND status NOT IN ('completed', 'cancelled', 'draft')
+RETURNING *;
+
 -- name: ListPublicTournaments :many
 SELECT * FROM tournaments
 WHERE status <> 'draft'
