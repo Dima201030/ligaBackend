@@ -55,6 +55,93 @@ func (ns NullBracketStatus) Value() (driver.Value, error) {
 	return string(ns.BracketStatus), nil
 }
 
+type ClubEventKind string
+
+const (
+	ClubEventKindTournament ClubEventKind = "tournament"
+	ClubEventKindCamp       ClubEventKind = "camp"
+	ClubEventKindSchool     ClubEventKind = "school"
+	ClubEventKindClub       ClubEventKind = "club"
+)
+
+func (e *ClubEventKind) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ClubEventKind(s)
+	case string:
+		*e = ClubEventKind(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ClubEventKind: %T", src)
+	}
+	return nil
+}
+
+type NullClubEventKind struct {
+	ClubEventKind ClubEventKind
+	Valid         bool // Valid is true if ClubEventKind is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullClubEventKind) Scan(value interface{}) error {
+	if value == nil {
+		ns.ClubEventKind, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ClubEventKind.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullClubEventKind) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ClubEventKind), nil
+}
+
+type ContentStatus string
+
+const (
+	ContentStatusDraft     ContentStatus = "draft"
+	ContentStatusPublished ContentStatus = "published"
+	ContentStatusArchived  ContentStatus = "archived"
+)
+
+func (e *ContentStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ContentStatus(s)
+	case string:
+		*e = ContentStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ContentStatus: %T", src)
+	}
+	return nil
+}
+
+type NullContentStatus struct {
+	ContentStatus ContentStatus
+	Valid         bool // Valid is true if ContentStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullContentStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ContentStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ContentStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullContentStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ContentStatus), nil
+}
+
 type EmailOutboxStatus string
 
 const (
@@ -559,6 +646,22 @@ type AuditLog struct {
 	CreatedAt pgtype.Timestamptz
 }
 
+type ClubEvent struct {
+	ID          pgtype.UUID
+	Slug        string
+	Title       string
+	Kind        ClubEventKind
+	Description string
+	StartsAt    pgtype.Timestamptz
+	Location    string
+	CoverUrl    pgtype.Text
+	SeatsLeft   pgtype.Int4
+	Status      ContentStatus
+	CreatedBy   pgtype.UUID
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
 type EmailOutbox struct {
 	ID            pgtype.UUID
 	To            string
@@ -606,6 +709,32 @@ type MatchSide struct {
 	Seed           pgtype.Int4
 	Label          pgtype.Text
 	IsBye          bool
+}
+
+type NewsPost struct {
+	ID          pgtype.UUID
+	Slug        string
+	Title       string
+	Excerpt     string
+	BodyJson    []byte
+	CoverUrl    pgtype.Text
+	Tag         string
+	AuthorName  string
+	AuthorID    pgtype.UUID
+	Status      ContentStatus
+	PublishedAt pgtype.Timestamptz
+	ReadingTime int32
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
+type Page struct {
+	Slug         string
+	Title        string
+	BodyMarkdown string
+	UpdatedBy    pgtype.UUID
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
 }
 
 type Profile struct {

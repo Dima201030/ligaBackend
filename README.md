@@ -1,7 +1,7 @@
 # ligaBackend
 
-Go API для лиги Mr. Pushkin (D-017). Этап 6: рейтинг (Elo + очки) и публичные игроки;
-плюс матчи/сетки (5), турниры/заявки (4) и auth (3).
+Go API для лиги Mr. Pushkin (D-017). Этап 7: контент (новости/события/страницы);
+плюс рейтинг/игроки (6), матчи/сетки (5), турниры/заявки (4) и auth (3).
 
 ## Стек
 
@@ -66,6 +66,19 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | POST | `/api/organizer/ratings/manual` | Ручная корректировка (с причиной) |
 | POST | `/api/organizer/ratings/snapshot` | Снимок таблицы `rankings` |
 | POST | `/api/organizer/tournaments/{id}/ratings/apply` | Начисление очков за турнир |
+| GET | `/api/news` | Публичные новости (`tag`, `limit`, `offset`) |
+| GET | `/api/news/{slug}` | Карточка новости |
+| GET | `/api/events` | Публичные события (`kind`, `limit`, `offset`) |
+| GET | `/api/events/{slug}` | Карточка события |
+| GET | `/api/pages` | Список статических страниц |
+| GET | `/api/pages/{slug}` | Страница (club/contacts/rules…) |
+| GET | `/api/organizer/news` | Все новости (вкл. draft) |
+| POST | `/api/organizer/news` | Создать новость |
+| PATCH | `/api/organizer/news/{id}` | Редактировать / publish/archive |
+| GET | `/api/organizer/events` | Все события |
+| POST | `/api/organizer/events` | Создать событие |
+| PATCH | `/api/organizer/events/{id}` | Редактировать событие |
+| PUT | `/api/organizer/pages/{slug}` | Upsert markdown-страницы |
 
 Вместимость: `SELECT … FOR UPDATE` на турнир в одной транзакции; overflow → waitlist;
 отмена confirmed/pending продвигает очередь.
@@ -148,11 +161,12 @@ cmd/seed/          CLI seed approved organizer
 internal/auth/     сессии, rate limit, уровни
 internal/config/   env
 internal/crypto/   random, SHA-256 токенов, Argon2id, AES-GCM
-internal/http/     router, auth, organizer, tournaments, matches, players, ratings
+internal/http/     router, auth, organizer, tournaments, matches, players, ratings, content
 internal/tournaments  slug + registration capacity
 internal/bracket/  pure draw generation (olympic/RR/groups/DE)
 internal/matches/  generate/publish/score/advance (+ Elo hook)
 internal/rating/   формула очков/Elo, slug игрока, apply/snapshot
+internal/content/  reading time для новостей
 internal/mail/     email_outbox enqueue
 internal/db/       pgx pool + sqlc
 migrations/        goose

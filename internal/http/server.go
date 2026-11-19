@@ -74,6 +74,13 @@ func NewWithOptions(opts Options) *Server {
 	s.router.Get("/api/players/{slug}/rating-events", s.handlePlayerRatingEvents)
 	s.router.Get("/api/rankings", s.handleListRankings)
 
+	s.router.Get("/api/news", s.handleListPublicNews)
+	s.router.Get("/api/news/{slug}", s.handleGetPublicNews)
+	s.router.Get("/api/events", s.handleListPublicEvents)
+	s.router.Get("/api/events/{slug}", s.handleGetPublicEvent)
+	s.router.Get("/api/pages", s.handleListPages)
+	s.router.Get("/api/pages/{slug}", s.handleGetPage)
+
 	s.router.Route("/api/organizer", func(r chi.Router) {
 		r.Use(s.requireAuth)
 		r.Use(s.requireOrganizer)
@@ -98,6 +105,13 @@ func NewWithOptions(opts Options) *Server {
 		r.Patch("/players/{id}", s.handleUpdateOrganizerPlayer)
 		r.Post("/ratings/manual", s.handleManualRating)
 		r.Post("/ratings/snapshot", s.handleRatingSnapshot)
+		r.Get("/news", s.handleListOrganizerNews)
+		r.Post("/news", s.handleCreateNews)
+		r.Patch("/news/{id}", s.handleUpdateNews)
+		r.Get("/events", s.handleListOrganizerEvents)
+		r.Post("/events", s.handleCreateEvent)
+		r.Patch("/events/{id}", s.handleUpdateEvent)
+		r.Put("/pages/{slug}", s.handleUpsertPage)
 	})
 
 	return s
