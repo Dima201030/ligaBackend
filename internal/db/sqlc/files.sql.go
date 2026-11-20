@@ -13,14 +13,15 @@ import (
 
 const createFile = `-- name: CreateFile :one
 INSERT INTO files (
-    bucket, path, original_name, mime, size, width, height, checksum, uploaded_by
+    club_id, bucket, path, original_name, mime, size, width, height, checksum, uploaded_by
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 )
-RETURNING id, bucket, path, original_name, mime, size, width, height, checksum, uploaded_by, created_at, deleted_at
+RETURNING id, club_id, bucket, path, original_name, mime, size, width, height, checksum, uploaded_by, created_at, deleted_at
 `
 
 type CreateFileParams struct {
+	ClubID       pgtype.UUID
 	Bucket       string
 	Path         string
 	OriginalName string
@@ -34,6 +35,7 @@ type CreateFileParams struct {
 
 func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, error) {
 	row := q.db.QueryRow(ctx, createFile,
+		arg.ClubID,
 		arg.Bucket,
 		arg.Path,
 		arg.OriginalName,
@@ -47,6 +49,39 @@ func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, e
 	var i File
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
+		&i.Bucket,
+		&i.Path,
+		&i.OriginalName,
+		&i.Mime,
+		&i.Size,
+		&i.Width,
+		&i.Height,
+		&i.Checksum,
+		&i.UploadedBy,
+		&i.CreatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getFileByClubAndID = `-- name: GetFileByClubAndID :one
+SELECT id, club_id, bucket, path, original_name, mime, size, width, height, checksum, uploaded_by, created_at, deleted_at
+FROM files
+WHERE club_id = $1 AND id = $2 AND deleted_at IS NULL
+`
+
+type GetFileByClubAndIDParams struct {
+	ClubID pgtype.UUID
+	ID     pgtype.UUID
+}
+
+func (q *Queries) GetFileByClubAndID(ctx context.Context, arg GetFileByClubAndIDParams) (File, error) {
+	row := q.db.QueryRow(ctx, getFileByClubAndID, arg.ClubID, arg.ID)
+	var i File
+	err := row.Scan(
+		&i.ID,
+		&i.ClubID,
 		&i.Bucket,
 		&i.Path,
 		&i.OriginalName,
@@ -63,7 +98,7 @@ func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, e
 }
 
 const getFileByID = `-- name: GetFileByID :one
-SELECT id, bucket, path, original_name, mime, size, width, height, checksum, uploaded_by, created_at, deleted_at
+SELECT id, club_id, bucket, path, original_name, mime, size, width, height, checksum, uploaded_by, created_at, deleted_at
 FROM files
 WHERE id = $1 AND deleted_at IS NULL
 `
@@ -73,6 +108,7 @@ func (q *Queries) GetFileByID(ctx context.Context, id pgtype.UUID) (File, error)
 	var i File
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Bucket,
 		&i.Path,
 		&i.OriginalName,
@@ -94,7 +130,7 @@ SET cover_file_id = $2,
     cover_url = $3,
     updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, kind, description, starts_at, location, cover_url, cover_file_id, seats_left, status, created_by, created_at, updated_at
+RETURNING id, club_id, slug, title, kind, description, starts_at, location, cover_url, cover_file_id, seats_left, status, created_by, created_at, updated_at
 `
 
 type SetEventCoverParams struct {
@@ -108,6 +144,7 @@ func (q *Queries) SetEventCover(ctx context.Context, arg SetEventCoverParams) (C
 	var i ClubEvent
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Kind,
@@ -131,7 +168,7 @@ SET cover_file_id = $2,
     cover_url = $3,
     updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, excerpt, body_json, cover_url, cover_file_id, tag, author_name, author_id, status, published_at, reading_time, created_at, updated_at
+RETURNING id, club_id, slug, title, excerpt, body_json, cover_url, cover_file_id, tag, author_name, author_id, status, published_at, reading_time, created_at, updated_at
 `
 
 type SetNewsCoverParams struct {
@@ -145,6 +182,7 @@ func (q *Queries) SetNewsCover(ctx context.Context, arg SetNewsCoverParams) (New
 	var i NewsPost
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Excerpt,
@@ -169,7 +207,7 @@ SET avatar_file_id = $2,
     avatar_url = $3,
     updated_at = now()
 WHERE user_id = $1
-RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 `
 
 type SetProfileAvatarParams struct {
@@ -183,6 +221,7 @@ func (q *Queries) SetProfileAvatar(ctx context.Context, arg SetProfileAvatarPara
 	var i Profile
 	err := row.Scan(
 		&i.UserID,
+		&i.ClubID,
 		&i.Phone,
 		&i.Level,
 		&i.Slug,
@@ -211,7 +250,7 @@ SET cover_file_id = $2,
     cover_url = $3,
     updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
+RETURNING id, club_id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
 `
 
 type SetTournamentCoverParams struct {
@@ -225,6 +264,7 @@ func (q *Queries) SetTournamentCover(ctx context.Context, arg SetTournamentCover
 	var i Tournament
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Description,
@@ -261,7 +301,7 @@ const softDeleteFile = `-- name: SoftDeleteFile :one
 UPDATE files
 SET deleted_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, bucket, path, original_name, mime, size, width, height, checksum, uploaded_by, created_at, deleted_at
+RETURNING id, club_id, bucket, path, original_name, mime, size, width, height, checksum, uploaded_by, created_at, deleted_at
 `
 
 func (q *Queries) SoftDeleteFile(ctx context.Context, id pgtype.UUID) (File, error) {
@@ -269,6 +309,7 @@ func (q *Queries) SoftDeleteFile(ctx context.Context, id pgtype.UUID) (File, err
 	var i File
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Bucket,
 		&i.Path,
 		&i.OriginalName,

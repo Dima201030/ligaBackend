@@ -6,9 +6,10 @@ import (
 )
 
 // NewProfileParams builds CreateProfile defaults (start rating 1200, active).
-func NewProfileParams(userID pgtype.UUID, phone pgtype.Text, level, firstName, lastName string) sqlc.CreateProfileParams {
+func NewProfileParams(userID, clubID pgtype.UUID, phone pgtype.Text, level, firstName, lastName string) sqlc.CreateProfileParams {
 	return sqlc.CreateProfileParams{
 		UserID:        userID,
+		ClubID:        clubID,
 		Phone:         phone,
 		Level:         level,
 		Slug:          PlayerSlug(lastName, firstName, userID),

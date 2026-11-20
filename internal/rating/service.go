@@ -20,6 +20,7 @@ var (
 
 // MatchEloInput applies Elo after a completed/walkover/retire match.
 type MatchEloInput struct {
+	ClubID       pgtype.UUID
 	MatchID      pgtype.UUID
 	TournamentID pgtype.UUID
 	Season       int32
@@ -46,7 +47,7 @@ func ApplyMatchElo(ctx context.Context, q *sqlc.Queries, in MatchEloInput) error
 	if len(in.Side1) == 0 || len(in.Side2) == 0 {
 		return nil
 	}
-	cfg, coeffs, err := loadConfig(ctx, q, in.Season)
+	cfg, coeffs, err := loadConfig(ctx, q, in.ClubID, in.Season)
 	if err != nil {
 		return err
 	}
@@ -127,6 +128,7 @@ func ApplyMatchElo(ctx context.Context, q *sqlc.Queries, in MatchEloInput) error
 
 // ManualInput is an organizer adjustment with mandatory reason.
 type ManualInput struct {
+	ClubID      pgtype.UUID
 	PlayerID    pgtype.UUID
 	Season      int32
 	PointsDelta int32
@@ -151,7 +153,7 @@ func ApplyManual(ctx context.Context, store *db.Store, in ManualInput) (sqlc.Rat
 	defer tx.Rollback(ctx)
 	q := store.Queries.WithTx(tx)
 
-	cfg, coeffs, err := loadConfig(ctx, q, in.Season)
+	cfg, coeffs, err := loadConfig(ctx, q, in.ClubID, in.Season)
 	if err != nil {
 		return sqlc.RatingEvent{}, err
 	}
@@ -219,6 +221,7 @@ func ApplyManual(ctx context.Context, store *db.Store, in ManualInput) (sqlc.Rat
 
 // TournamentApplyInput awards points for a finished tournament.
 type TournamentApplyInput struct {
+	ClubID       pgtype.UUID // optional; filled from tournament when invalid
 	TournamentID pgtype.UUID
 	Season       int32
 	Category     string
@@ -263,7 +266,10 @@ func ApplyTournamentPointsTx(ctx context.Context, q *sqlc.Queries, in Tournament
 	if in.Season == 0 {
 		in.Season = tour.Season
 	}
-	cfg, coeffs, err := loadConfig(ctx, q, in.Season)
+	if !in.ClubID.Valid {
+		in.ClubID = tour.ClubID
+	}
+	cfg, coeffs, err := loadConfig(ctx, q, in.ClubID, in.Season)
 	if err != nil {
 		return 0, err
 	}
@@ -386,7 +392,7 @@ func ApplyTournamentPointsTx(ctx context.Context, q *sqlc.Queries, in Tournament
 }
 
 // Snapshot builds a rankings snapshot for the season from current profile points.
-func Snapshot(ctx context.Context, store *db.Store, season int32) (time.Time, int, error) {
+func Snapshot(ctx context.Context, store *db.Store, clubID pgtype.UUID, season int32) (time.Time, int, error) {
 	tx, err := store.Pool.Begin(ctx)
 	if err != nil {
 		return time.Time{}, 0, err
@@ -395,10 +401,14 @@ func Snapshot(ctx context.Context, store *db.Store, season int32) (time.Time, in
 	q := store.Queries.WithTx(tx)
 
 	calcAt := time.Now().UTC()
-	prevAt, err := q.LatestRankingCalculatedAt(ctx, season)
+	prevAt, err := q.LatestRankingCalculatedAt(ctx, sqlc.LatestRankingCalculatedAtParams{
+		ClubID: clubID,
+		Season: season,
+	})
 	prevMap := map[string]int32{}
 	if err == nil && prevAt.Valid {
 		rows, err := q.ListPreviousPositions(ctx, sqlc.ListPreviousPositionsParams{
+			ClubID:        clubID,
 			Season:        season,
 			CalculatedAt:  prevAt,
 		})
@@ -413,6 +423,7 @@ func Snapshot(ctx context.Context, store *db.Store, season int32) (time.Time, in
 	}
 
 	players, err := q.ListPublicPlayers(ctx, sqlc.ListPublicPlayersParams{
+		ClubID:      clubID,
 		Category:    pgtype.Text{},
 		Query:       pgtype.Text{},
 		LimitCount:  10000,
@@ -429,6 +440,7 @@ func Snapshot(ctx context.Context, store *db.Store, season int32) (time.Time, in
 			prev = pgtype.Int4{Int32: v, Valid: true}
 		}
 		if _, err := q.InsertRankingRow(ctx, sqlc.InsertRankingRowParams{
+			ClubID:           clubID,
 			Season:           season,
 			PlayerID:         p.ID,
 			Position:         pos,
@@ -449,8 +461,11 @@ func Snapshot(ctx context.Context, store *db.Store, season int32) (time.Time, in
 	return calcAt, len(players), nil
 }
 
-func loadConfig(ctx context.Context, q *sqlc.Queries, season int32) (sqlc.RatingConfig, Coefficients, error) {
-	cfg, err := q.GetLatestRatingConfig(ctx, season)
+func loadConfig(ctx context.Context, q *sqlc.Queries, clubID pgtype.UUID, season int32) (sqlc.RatingConfig, Coefficients, error) {
+	cfg, err := q.GetLatestRatingConfig(ctx, sqlc.GetLatestRatingConfigParams{
+		ClubID: clubID,
+		Season: season,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return sqlc.RatingConfig{}, Coefficients{}, ErrConfigNotFound

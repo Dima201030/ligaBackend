@@ -17,7 +17,7 @@ SET status = 'completed',
     updated_at = now()
 WHERE id = $1
   AND status NOT IN ('completed', 'cancelled', 'draft')
-RETURNING id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
+RETURNING id, club_id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
 `
 
 func (q *Queries) CompleteTournamentIfActive(ctx context.Context, id pgtype.UUID) (Tournament, error) {
@@ -25,6 +25,7 @@ func (q *Queries) CompleteTournamentIfActive(ctx context.Context, id pgtype.UUID
 	var i Tournament
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Description,
@@ -59,20 +60,21 @@ func (q *Queries) CompleteTournamentIfActive(ctx context.Context, id pgtype.UUID
 
 const createTournament = `-- name: CreateTournament :one
 INSERT INTO tournaments (
-    slug, title, description, type, category, surface, format, status,
+    club_id, slug, title, description, type, category, surface, format, status,
     starts_at, ends_at, registration_opens_at, registration_closes_at,
     venue_name, venue_address, venue_courts, venue_surface,
     entry_fee, max_participants, cover_url, season, created_by
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8,
-    $9, $10, $11, $12,
-    $13, $14, $15, $16,
-    $17, $18, $19, $20, $21
+    $1, $2, $3, $4, $5, $6, $7, $8, $9,
+    $10, $11, $12, $13,
+    $14, $15, $16, $17,
+    $18, $19, $20, $21, $22
 )
-RETURNING id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
+RETURNING id, club_id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
 `
 
 type CreateTournamentParams struct {
+	ClubID               pgtype.UUID
 	Slug                 string
 	Title                string
 	Description          string
@@ -98,6 +100,7 @@ type CreateTournamentParams struct {
 
 func (q *Queries) CreateTournament(ctx context.Context, arg CreateTournamentParams) (Tournament, error) {
 	row := q.db.QueryRow(ctx, createTournament,
+		arg.ClubID,
 		arg.Slug,
 		arg.Title,
 		arg.Description,
@@ -123,6 +126,7 @@ func (q *Queries) CreateTournament(ctx context.Context, arg CreateTournamentPara
 	var i Tournament
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Description,
@@ -193,8 +197,55 @@ func (q *Queries) CreateTournamentRuleVersion(ctx context.Context, arg CreateTou
 	return i, err
 }
 
+const getTournamentByClubAndID = `-- name: GetTournamentByClubAndID :one
+SELECT id, club_id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments WHERE club_id = $1 AND id = $2
+`
+
+type GetTournamentByClubAndIDParams struct {
+	ClubID pgtype.UUID
+	ID     pgtype.UUID
+}
+
+func (q *Queries) GetTournamentByClubAndID(ctx context.Context, arg GetTournamentByClubAndIDParams) (Tournament, error) {
+	row := q.db.QueryRow(ctx, getTournamentByClubAndID, arg.ClubID, arg.ID)
+	var i Tournament
+	err := row.Scan(
+		&i.ID,
+		&i.ClubID,
+		&i.Slug,
+		&i.Title,
+		&i.Description,
+		&i.Type,
+		&i.Category,
+		&i.Surface,
+		&i.Format,
+		&i.Status,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.RegistrationOpensAt,
+		&i.RegistrationClosesAt,
+		&i.VenueName,
+		&i.VenueAddress,
+		&i.VenueCourts,
+		&i.VenueSurface,
+		&i.EntryFee,
+		&i.MaxParticipants,
+		&i.CoverUrl,
+		&i.CoverFileID,
+		&i.Season,
+		&i.CreatedBy,
+		&i.BracketStatus,
+		&i.BracketPublishedAt,
+		&i.BracketVersion,
+		&i.BracketThirdPlace,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getTournamentByID = `-- name: GetTournamentByID :one
-SELECT id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments WHERE id = $1
+SELECT id, club_id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments WHERE id = $1
 `
 
 func (q *Queries) GetTournamentByID(ctx context.Context, id pgtype.UUID) (Tournament, error) {
@@ -202,6 +253,7 @@ func (q *Queries) GetTournamentByID(ctx context.Context, id pgtype.UUID) (Tourna
 	var i Tournament
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Description,
@@ -235,14 +287,20 @@ func (q *Queries) GetTournamentByID(ctx context.Context, id pgtype.UUID) (Tourna
 }
 
 const getTournamentBySlug = `-- name: GetTournamentBySlug :one
-SELECT id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments WHERE slug = $1
+SELECT id, club_id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments WHERE club_id = $1 AND slug = $2
 `
 
-func (q *Queries) GetTournamentBySlug(ctx context.Context, slug string) (Tournament, error) {
-	row := q.db.QueryRow(ctx, getTournamentBySlug, slug)
+type GetTournamentBySlugParams struct {
+	ClubID pgtype.UUID
+	Slug   string
+}
+
+func (q *Queries) GetTournamentBySlug(ctx context.Context, arg GetTournamentBySlugParams) (Tournament, error) {
+	row := q.db.QueryRow(ctx, getTournamentBySlug, arg.ClubID, arg.Slug)
 	var i Tournament
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Description,
@@ -298,7 +356,8 @@ func (q *Queries) LatestTournamentRuleVersion(ctx context.Context, tournamentID 
 }
 
 const listOrganizerTournaments = `-- name: ListOrganizerTournaments :many
-SELECT id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments
+SELECT id, club_id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments
+WHERE club_id = $1
 ORDER BY
     CASE status
         WHEN 'live' THEN 0
@@ -314,8 +373,8 @@ ORDER BY
     starts_at ASC
 `
 
-func (q *Queries) ListOrganizerTournaments(ctx context.Context) ([]Tournament, error) {
-	rows, err := q.db.Query(ctx, listOrganizerTournaments)
+func (q *Queries) ListOrganizerTournaments(ctx context.Context, clubID pgtype.UUID) ([]Tournament, error) {
+	rows, err := q.db.Query(ctx, listOrganizerTournaments, clubID)
 	if err != nil {
 		return nil, err
 	}
@@ -325,6 +384,7 @@ func (q *Queries) ListOrganizerTournaments(ctx context.Context) ([]Tournament, e
 		var i Tournament
 		if err := rows.Scan(
 			&i.ID,
+			&i.ClubID,
 			&i.Slug,
 			&i.Title,
 			&i.Description,
@@ -365,13 +425,14 @@ func (q *Queries) ListOrganizerTournaments(ctx context.Context) ([]Tournament, e
 }
 
 const listPublicTournaments = `-- name: ListPublicTournaments :many
-SELECT id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments
-WHERE status <> 'draft'
+SELECT id, club_id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments
+WHERE club_id = $1
+  AND status <> 'draft'
 ORDER BY starts_at ASC
 `
 
-func (q *Queries) ListPublicTournaments(ctx context.Context) ([]Tournament, error) {
-	rows, err := q.db.Query(ctx, listPublicTournaments)
+func (q *Queries) ListPublicTournaments(ctx context.Context, clubID pgtype.UUID) ([]Tournament, error) {
+	rows, err := q.db.Query(ctx, listPublicTournaments, clubID)
 	if err != nil {
 		return nil, err
 	}
@@ -381,6 +442,7 @@ func (q *Queries) ListPublicTournaments(ctx context.Context) ([]Tournament, erro
 		var i Tournament
 		if err := rows.Scan(
 			&i.ID,
+			&i.ClubID,
 			&i.Slug,
 			&i.Title,
 			&i.Description,
@@ -421,7 +483,7 @@ func (q *Queries) ListPublicTournaments(ctx context.Context) ([]Tournament, erro
 }
 
 const lockTournamentByID = `-- name: LockTournamentByID :one
-SELECT id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE
+SELECT id, club_id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) LockTournamentByID(ctx context.Context, id pgtype.UUID) (Tournament, error) {
@@ -429,6 +491,7 @@ func (q *Queries) LockTournamentByID(ctx context.Context, id pgtype.UUID) (Tourn
 	var i Tournament
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Description,
@@ -472,7 +535,7 @@ WHERE id = $1
       'registration_closed',
       'scheduled'
   )
-RETURNING id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
+RETURNING id, club_id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
 `
 
 func (q *Queries) MarkTournamentLiveIfPending(ctx context.Context, id pgtype.UUID) (Tournament, error) {
@@ -480,6 +543,7 @@ func (q *Queries) MarkTournamentLiveIfPending(ctx context.Context, id pgtype.UUI
 	var i Tournament
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Description,
@@ -526,11 +590,18 @@ func (q *Queries) NextRuleVersion(ctx context.Context, tournamentID pgtype.UUID)
 }
 
 const slugExists = `-- name: SlugExists :one
-SELECT EXISTS(SELECT 1 FROM tournaments WHERE slug = $1)::bool AS exists
+SELECT EXISTS(
+    SELECT 1 FROM tournaments WHERE club_id = $1 AND slug = $2
+)::bool AS exists
 `
 
-func (q *Queries) SlugExists(ctx context.Context, slug string) (bool, error) {
-	row := q.db.QueryRow(ctx, slugExists, slug)
+type SlugExistsParams struct {
+	ClubID pgtype.UUID
+	Slug   string
+}
+
+func (q *Queries) SlugExists(ctx context.Context, arg SlugExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, slugExists, arg.ClubID, arg.Slug)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -559,7 +630,7 @@ UPDATE tournaments SET
     season = $20,
     updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
+RETURNING id, club_id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
 `
 
 type UpdateTournamentParams struct {
@@ -611,6 +682,7 @@ func (q *Queries) UpdateTournament(ctx context.Context, arg UpdateTournamentPara
 	var i Tournament
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Description,

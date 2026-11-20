@@ -56,7 +56,7 @@ type createRegistrationRequest struct {
 }
 
 func (s *Server) handleListPublicTournaments(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.store.Queries.ListPublicTournaments(r.Context())
+	rows, err := s.store.Queries.ListPublicTournaments(r.Context(), s.currentClubID(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турниры")
 		return
@@ -122,7 +122,7 @@ func (s *Server) handleGetPublicTournament(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "validation", "Укажите slug турнира")
 		return
 	}
-	tour, err := s.store.Queries.GetTournamentBySlug(r.Context(), slug)
+	tour, err := s.store.Queries.GetTournamentBySlug(r.Context(), sqlc.GetTournamentBySlugParams{ClubID: s.currentClubID(r), Slug: slug})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
@@ -155,7 +155,7 @@ func (s *Server) handleGetPublicTournament(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleListOrganizerTournaments(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.store.Queries.ListOrganizerTournaments(r.Context())
+	rows, err := s.store.Queries.ListOrganizerTournaments(r.Context(), s.currentClubID(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турниры")
 		return
@@ -507,7 +507,7 @@ func (s *Server) handleCreateRegistration(w http.ResponseWriter, r *http.Request
 	}
 
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
-	tour, err := s.store.Queries.GetTournamentBySlug(r.Context(), slug)
+	tour, err := s.store.Queries.GetTournamentBySlug(r.Context(), sqlc.GetTournamentBySlugParams{ClubID: s.currentClubID(r), Slug: slug})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
@@ -572,7 +572,7 @@ func (s *Server) handleCancelRegistration(w http.ResponseWriter, r *http.Request
 		return
 	}
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
-	tour, err := s.store.Queries.GetTournamentBySlug(r.Context(), slug)
+	tour, err := s.store.Queries.GetTournamentBySlug(r.Context(), sqlc.GetTournamentBySlugParams{ClubID: s.currentClubID(r), Slug: slug})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")

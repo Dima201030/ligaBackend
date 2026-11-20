@@ -64,9 +64,13 @@ func NewWithOptions(opts Options) *Server {
 	s.router.Use(middleware.RealIP)
 	s.router.Use(middleware.Recoverer)
 	s.router.Use(s.withSession)
+	s.router.Use(s.withClub)
 
 	s.router.Get("/api/health", s.handleHealth)
 	s.router.Get("/status", s.handleStatus)
+
+	s.router.Get("/api/clubs", s.handleListClubs)
+	s.router.Get("/api/clubs/{slug}", s.handleGetClub)
 
 	s.router.Route("/api/auth", func(r chi.Router) {
 		r.Post("/register", s.handleRegister)

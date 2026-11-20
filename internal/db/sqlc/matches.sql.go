@@ -577,7 +577,8 @@ SELECT
     t.type AS tournament_type
 FROM matches m
 JOIN tournaments t ON t.id = m.tournament_id
-WHERE m.status <> 'bye'
+WHERE t.club_id = $1
+  AND m.status <> 'bye'
 ORDER BY
     CASE m.status
         WHEN 'live' THEN 0
@@ -618,8 +619,8 @@ type ListOrganizerMatchesRow struct {
 	TournamentType   TournamentType
 }
 
-func (q *Queries) ListOrganizerMatches(ctx context.Context) ([]ListOrganizerMatchesRow, error) {
-	rows, err := q.db.Query(ctx, listOrganizerMatches)
+func (q *Queries) ListOrganizerMatches(ctx context.Context, clubID pgtype.UUID) ([]ListOrganizerMatchesRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizerMatches, clubID)
 	if err != nil {
 		return nil, err
 	}
@@ -703,7 +704,7 @@ SET bracket_status = 'published',
     updated_at = now()
 WHERE id = $1
   AND bracket_status IN ('draft', 'published')
-RETURNING id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
+RETURNING id, club_id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
 `
 
 func (q *Queries) PublishTournamentBracket(ctx context.Context, id pgtype.UUID) (Tournament, error) {
@@ -711,6 +712,7 @@ func (q *Queries) PublishTournamentBracket(ctx context.Context, id pgtype.UUID) 
 	var i Tournament
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Description,
@@ -794,7 +796,7 @@ SET bracket_status = 'draft',
     bracket_third_place = $2,
     updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
+RETURNING id, club_id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
 `
 
 type SetTournamentBracketDraftParams struct {
@@ -807,6 +809,7 @@ func (q *Queries) SetTournamentBracketDraft(ctx context.Context, arg SetTourname
 	var i Tournament
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Description,

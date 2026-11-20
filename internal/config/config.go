@@ -24,6 +24,7 @@ type Config struct {
 	SMTPFrom                 string
 	UploadsDir               string
 	MaxUploadBytes           int64
+	DefaultClubSlug          string
 }
 
 // Load reads configuration from environment variables.
@@ -74,6 +75,7 @@ func Load() (Config, error) {
 	}
 
 	cfg.UploadsDir = envOr("UPLOADS_DIR", "./data/uploads")
+	cfg.DefaultClubSlug = strings.ToLower(envOr("DEFAULT_CLUB_SLUG", "mr-pushkin"))
 	if v := strings.TrimSpace(os.Getenv("MAX_UPLOAD_BYTES")); v != "" {
 		n, err := strconv.ParseInt(v, 10, 64)
 		if err != nil || n < 1024 {

@@ -13,17 +13,18 @@ import (
 
 const createProfile = `-- name: CreateProfile :one
 INSERT INTO profiles (
-    user_id, phone, level, slug, gender, city, bio, avatar_url,
+    user_id, club_id, phone, level, slug, gender, city, bio, avatar_url,
     player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8,
-    $9, $10, $11, $12, $13, $14, $15, $16
+    $1, $2, $3, $4, $5, $6, $7, $8, $9,
+    $10, $11, $12, $13, $14, $15, $16, $17
 )
-RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 `
 
 type CreateProfileParams struct {
 	UserID        pgtype.UUID
+	ClubID        pgtype.UUID
 	Phone         pgtype.Text
 	Level         string
 	Slug          string
@@ -44,6 +45,7 @@ type CreateProfileParams struct {
 func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (Profile, error) {
 	row := q.db.QueryRow(ctx, createProfile,
 		arg.UserID,
+		arg.ClubID,
 		arg.Phone,
 		arg.Level,
 		arg.Slug,
@@ -63,6 +65,7 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 	var i Profile
 	err := row.Scan(
 		&i.UserID,
+		&i.ClubID,
 		&i.Phone,
 		&i.Level,
 		&i.Slug,
@@ -86,17 +89,23 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 }
 
 const getProfileBySlug = `-- name: GetProfileBySlug :one
-SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
+SELECT user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
        rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
-WHERE slug = $1
+WHERE club_id = $1 AND slug = $2
 `
 
-func (q *Queries) GetProfileBySlug(ctx context.Context, slug string) (Profile, error) {
-	row := q.db.QueryRow(ctx, getProfileBySlug, slug)
+type GetProfileBySlugParams struct {
+	ClubID pgtype.UUID
+	Slug   string
+}
+
+func (q *Queries) GetProfileBySlug(ctx context.Context, arg GetProfileBySlugParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, getProfileBySlug, arg.ClubID, arg.Slug)
 	var i Profile
 	err := row.Scan(
 		&i.UserID,
+		&i.ClubID,
 		&i.Phone,
 		&i.Level,
 		&i.Slug,
@@ -120,7 +129,7 @@ func (q *Queries) GetProfileBySlug(ctx context.Context, slug string) (Profile, e
 }
 
 const getProfileByUserID = `-- name: GetProfileByUserID :one
-SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
+SELECT user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
        rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
 WHERE user_id = $1
@@ -131,6 +140,7 @@ func (q *Queries) GetProfileByUserID(ctx context.Context, userID pgtype.UUID) (P
 	var i Profile
 	err := row.Scan(
 		&i.UserID,
+		&i.ClubID,
 		&i.Phone,
 		&i.Level,
 		&i.Slug,
@@ -177,10 +187,16 @@ SELECT
     p.updated_at
 FROM profiles p
 JOIN users u ON u.id = p.user_id
-WHERE p.slug = $1
+WHERE p.club_id = $1
+  AND p.slug = $2
   AND u.status = 'approved'
   AND p.player_status IN ('active', 'archived')
 `
+
+type GetPublicPlayerBySlugParams struct {
+	ClubID pgtype.UUID
+	Slug   string
+}
 
 type GetPublicPlayerBySlugRow struct {
 	ID            pgtype.UUID
@@ -205,8 +221,8 @@ type GetPublicPlayerBySlugRow struct {
 	UpdatedAt     pgtype.Timestamptz
 }
 
-func (q *Queries) GetPublicPlayerBySlug(ctx context.Context, slug string) (GetPublicPlayerBySlugRow, error) {
-	row := q.db.QueryRow(ctx, getPublicPlayerBySlug, slug)
+func (q *Queries) GetPublicPlayerBySlug(ctx context.Context, arg GetPublicPlayerBySlugParams) (GetPublicPlayerBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getPublicPlayerBySlug, arg.ClubID, arg.Slug)
 	var i GetPublicPlayerBySlugRow
 	err := row.Scan(
 		&i.ID,
@@ -260,13 +276,15 @@ SELECT
     p.updated_at
 FROM profiles p
 JOIN users u ON u.id = p.user_id
-WHERE ($1::text IS NULL OR u.status = $1::user_status)
-  AND ($2::text IS NULL OR p.level = $2)
+WHERE p.club_id = $1
+  AND ($2::text IS NULL OR u.status = $2::user_status)
+  AND ($3::text IS NULL OR p.level = $3)
 ORDER BY u.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type ListOrganizerPlayersParams struct {
+	ClubID      pgtype.UUID
 	UserStatus  pgtype.Text
 	Category    pgtype.Text
 	OffsetCount int32
@@ -301,6 +319,7 @@ type ListOrganizerPlayersRow struct {
 
 func (q *Queries) ListOrganizerPlayers(ctx context.Context, arg ListOrganizerPlayersParams) ([]ListOrganizerPlayersRow, error) {
 	rows, err := q.db.Query(ctx, listOrganizerPlayers,
+		arg.ClubID,
 		arg.UserStatus,
 		arg.Category,
 		arg.OffsetCount,
@@ -372,20 +391,22 @@ SELECT
     p.updated_at
 FROM profiles p
 JOIN users u ON u.id = p.user_id
-WHERE u.status = 'approved'
+WHERE p.club_id = $1
+  AND u.status = 'approved'
   AND p.player_status = 'active'
-  AND ($1::text IS NULL OR p.level = $1)
+  AND ($2::text IS NULL OR p.level = $2)
   AND (
-      $2::text IS NULL
-      OR u.first_name ILIKE '%' || $2 || '%'
-      OR u.last_name ILIKE '%' || $2 || '%'
-      OR p.slug ILIKE '%' || $2 || '%'
+      $3::text IS NULL
+      OR u.first_name ILIKE '%' || $3 || '%'
+      OR u.last_name ILIKE '%' || $3 || '%'
+      OR p.slug ILIKE '%' || $3 || '%'
   )
 ORDER BY p.points DESC, p.rating DESC, u.last_name ASC, u.first_name ASC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type ListPublicPlayersParams struct {
+	ClubID      pgtype.UUID
 	Category    pgtype.Text
 	Query       pgtype.Text
 	OffsetCount int32
@@ -417,6 +438,7 @@ type ListPublicPlayersRow struct {
 
 func (q *Queries) ListPublicPlayers(ctx context.Context, arg ListPublicPlayersParams) ([]ListPublicPlayersRow, error) {
 	rows, err := q.db.Query(ctx, listPublicPlayers,
+		arg.ClubID,
 		arg.Category,
 		arg.Query,
 		arg.OffsetCount,
@@ -487,7 +509,7 @@ SET gender = COALESCE($1, gender),
     level = COALESCE($6, level),
     updated_at = now()
 WHERE user_id = $7
-RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 `
 
 type UpdateProfilePublicParams struct {
@@ -513,6 +535,7 @@ func (q *Queries) UpdateProfilePublic(ctx context.Context, arg UpdateProfilePubl
 	var i Profile
 	err := row.Scan(
 		&i.UserID,
+		&i.ClubID,
 		&i.Phone,
 		&i.Level,
 		&i.Slug,

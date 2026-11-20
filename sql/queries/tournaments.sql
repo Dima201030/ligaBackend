@@ -1,14 +1,14 @@
 -- name: CreateTournament :one
 INSERT INTO tournaments (
-    slug, title, description, type, category, surface, format, status,
+    club_id, slug, title, description, type, category, surface, format, status,
     starts_at, ends_at, registration_opens_at, registration_closes_at,
     venue_name, venue_address, venue_courts, venue_surface,
     entry_fee, max_participants, cover_url, season, created_by
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8,
-    $9, $10, $11, $12,
-    $13, $14, $15, $16,
-    $17, $18, $19, $20, $21
+    $1, $2, $3, $4, $5, $6, $7, $8, $9,
+    $10, $11, $12, $13,
+    $14, $15, $16, $17,
+    $18, $19, $20, $21, $22
 )
 RETURNING *;
 
@@ -40,8 +40,11 @@ RETURNING *;
 -- name: GetTournamentByID :one
 SELECT * FROM tournaments WHERE id = $1;
 
+-- name: GetTournamentByClubAndID :one
+SELECT * FROM tournaments WHERE club_id = $1 AND id = $2;
+
 -- name: GetTournamentBySlug :one
-SELECT * FROM tournaments WHERE slug = $1;
+SELECT * FROM tournaments WHERE club_id = $1 AND slug = $2;
 
 -- name: LockTournamentByID :one
 SELECT * FROM tournaments WHERE id = $1 FOR UPDATE;
@@ -69,11 +72,13 @@ RETURNING *;
 
 -- name: ListPublicTournaments :many
 SELECT * FROM tournaments
-WHERE status <> 'draft'
+WHERE club_id = $1
+  AND status <> 'draft'
 ORDER BY starts_at ASC;
 
 -- name: ListOrganizerTournaments :many
 SELECT * FROM tournaments
+WHERE club_id = $1
 ORDER BY
     CASE status
         WHEN 'live' THEN 0
@@ -89,7 +94,9 @@ ORDER BY
     starts_at ASC;
 
 -- name: SlugExists :one
-SELECT EXISTS(SELECT 1 FROM tournaments WHERE slug = $1)::bool AS exists;
+SELECT EXISTS(
+    SELECT 1 FROM tournaments WHERE club_id = $1 AND slug = $2
+)::bool AS exists;
 
 -- name: CreateTournamentRuleVersion :one
 INSERT INTO tournament_rule_versions (

@@ -1,24 +1,24 @@
 -- name: CreateProfile :one
 INSERT INTO profiles (
-    user_id, phone, level, slug, gender, city, bio, avatar_url,
+    user_id, club_id, phone, level, slug, gender, city, bio, avatar_url,
     player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8,
-    $9, $10, $11, $12, $13, $14, $15, $16
+    $1, $2, $3, $4, $5, $6, $7, $8, $9,
+    $10, $11, $12, $13, $14, $15, $16, $17
 )
 RETURNING *;
 
 -- name: GetProfileByUserID :one
-SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
+SELECT user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
        rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
 WHERE user_id = $1;
 
 -- name: GetProfileBySlug :one
-SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
+SELECT user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
        rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
-WHERE slug = $1;
+WHERE club_id = $1 AND slug = $2;
 
 -- name: UpdateProfileLevelAndNames :exec
 UPDATE profiles
@@ -61,7 +61,8 @@ SELECT
     p.updated_at
 FROM profiles p
 JOIN users u ON u.id = p.user_id
-WHERE u.status = 'approved'
+WHERE p.club_id = sqlc.arg(club_id)
+  AND u.status = 'approved'
   AND p.player_status = 'active'
   AND (sqlc.narg(category)::text IS NULL OR p.level = sqlc.narg(category))
   AND (
@@ -97,7 +98,8 @@ SELECT
     p.updated_at
 FROM profiles p
 JOIN users u ON u.id = p.user_id
-WHERE p.slug = $1
+WHERE p.club_id = $1
+  AND p.slug = $2
   AND u.status = 'approved'
   AND p.player_status IN ('active', 'archived');
 
@@ -128,7 +130,8 @@ SELECT
     p.updated_at
 FROM profiles p
 JOIN users u ON u.id = p.user_id
-WHERE (sqlc.narg(user_status)::text IS NULL OR u.status = sqlc.narg(user_status)::user_status)
+WHERE p.club_id = sqlc.arg(club_id)
+  AND (sqlc.narg(user_status)::text IS NULL OR u.status = sqlc.narg(user_status)::user_status)
   AND (sqlc.narg(category)::text IS NULL OR p.level = sqlc.narg(category))
 ORDER BY u.created_at DESC
 LIMIT sqlc.arg(limit_count) OFFSET sqlc.arg(offset_count);

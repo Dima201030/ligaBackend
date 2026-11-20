@@ -13,14 +13,15 @@ import (
 
 const createClubEvent = `-- name: CreateClubEvent :one
 INSERT INTO club_events (
-    slug, title, kind, description, starts_at, location, cover_url, seats_left, status, created_by
+    club_id, slug, title, kind, description, starts_at, location, cover_url, seats_left, status, created_by
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 )
-RETURNING id, slug, title, kind, description, starts_at, location, cover_url, cover_file_id, seats_left, status, created_by, created_at, updated_at
+RETURNING id, club_id, slug, title, kind, description, starts_at, location, cover_url, cover_file_id, seats_left, status, created_by, created_at, updated_at
 `
 
 type CreateClubEventParams struct {
+	ClubID      pgtype.UUID
 	Slug        string
 	Title       string
 	Kind        ClubEventKind
@@ -35,6 +36,7 @@ type CreateClubEventParams struct {
 
 func (q *Queries) CreateClubEvent(ctx context.Context, arg CreateClubEventParams) (ClubEvent, error) {
 	row := q.db.QueryRow(ctx, createClubEvent,
+		arg.ClubID,
 		arg.Slug,
 		arg.Title,
 		arg.Kind,
@@ -49,6 +51,7 @@ func (q *Queries) CreateClubEvent(ctx context.Context, arg CreateClubEventParams
 	var i ClubEvent
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Kind,
@@ -68,15 +71,16 @@ func (q *Queries) CreateClubEvent(ctx context.Context, arg CreateClubEventParams
 
 const createNewsPost = `-- name: CreateNewsPost :one
 INSERT INTO news_posts (
-    slug, title, excerpt, body_json, cover_url, tag, author_name, author_id,
+    club_id, slug, title, excerpt, body_json, cover_url, tag, author_name, author_id,
     status, published_at, reading_time
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 )
-RETURNING id, slug, title, excerpt, body_json, cover_url, cover_file_id, tag, author_name, author_id, status, published_at, reading_time, created_at, updated_at
+RETURNING id, club_id, slug, title, excerpt, body_json, cover_url, cover_file_id, tag, author_name, author_id, status, published_at, reading_time, created_at, updated_at
 `
 
 type CreateNewsPostParams struct {
+	ClubID      pgtype.UUID
 	Slug        string
 	Title       string
 	Excerpt     string
@@ -92,6 +96,7 @@ type CreateNewsPostParams struct {
 
 func (q *Queries) CreateNewsPost(ctx context.Context, arg CreateNewsPostParams) (NewsPost, error) {
 	row := q.db.QueryRow(ctx, createNewsPost,
+		arg.ClubID,
 		arg.Slug,
 		arg.Title,
 		arg.Excerpt,
@@ -107,6 +112,7 @@ func (q *Queries) CreateNewsPost(ctx context.Context, arg CreateNewsPostParams) 
 	var i NewsPost
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Excerpt,
@@ -126,18 +132,57 @@ func (q *Queries) CreateNewsPost(ctx context.Context, arg CreateNewsPostParams) 
 }
 
 const eventSlugExists = `-- name: EventSlugExists :one
-SELECT EXISTS(SELECT 1 FROM club_events WHERE slug = $1)::bool AS exists
+SELECT EXISTS(
+    SELECT 1 FROM club_events WHERE club_id = $1 AND slug = $2
+)::bool AS exists
 `
 
-func (q *Queries) EventSlugExists(ctx context.Context, slug string) (bool, error) {
-	row := q.db.QueryRow(ctx, eventSlugExists, slug)
+type EventSlugExistsParams struct {
+	ClubID pgtype.UUID
+	Slug   string
+}
+
+func (q *Queries) EventSlugExists(ctx context.Context, arg EventSlugExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, eventSlugExists, arg.ClubID, arg.Slug)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
 }
 
+const getClubEventByClubAndID = `-- name: GetClubEventByClubAndID :one
+SELECT id, club_id, slug, title, kind, description, starts_at, location, cover_url, cover_file_id, seats_left, status, created_by, created_at, updated_at FROM club_events WHERE club_id = $1 AND id = $2
+`
+
+type GetClubEventByClubAndIDParams struct {
+	ClubID pgtype.UUID
+	ID     pgtype.UUID
+}
+
+func (q *Queries) GetClubEventByClubAndID(ctx context.Context, arg GetClubEventByClubAndIDParams) (ClubEvent, error) {
+	row := q.db.QueryRow(ctx, getClubEventByClubAndID, arg.ClubID, arg.ID)
+	var i ClubEvent
+	err := row.Scan(
+		&i.ID,
+		&i.ClubID,
+		&i.Slug,
+		&i.Title,
+		&i.Kind,
+		&i.Description,
+		&i.StartsAt,
+		&i.Location,
+		&i.CoverUrl,
+		&i.CoverFileID,
+		&i.SeatsLeft,
+		&i.Status,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getClubEventByID = `-- name: GetClubEventByID :one
-SELECT id, slug, title, kind, description, starts_at, location, cover_url, cover_file_id, seats_left, status, created_by, created_at, updated_at FROM club_events WHERE id = $1
+SELECT id, club_id, slug, title, kind, description, starts_at, location, cover_url, cover_file_id, seats_left, status, created_by, created_at, updated_at FROM club_events WHERE id = $1
 `
 
 func (q *Queries) GetClubEventByID(ctx context.Context, id pgtype.UUID) (ClubEvent, error) {
@@ -145,6 +190,7 @@ func (q *Queries) GetClubEventByID(ctx context.Context, id pgtype.UUID) (ClubEve
 	var i ClubEvent
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Kind,
@@ -163,14 +209,20 @@ func (q *Queries) GetClubEventByID(ctx context.Context, id pgtype.UUID) (ClubEve
 }
 
 const getClubEventBySlug = `-- name: GetClubEventBySlug :one
-SELECT id, slug, title, kind, description, starts_at, location, cover_url, cover_file_id, seats_left, status, created_by, created_at, updated_at FROM club_events WHERE slug = $1
+SELECT id, club_id, slug, title, kind, description, starts_at, location, cover_url, cover_file_id, seats_left, status, created_by, created_at, updated_at FROM club_events WHERE club_id = $1 AND slug = $2
 `
 
-func (q *Queries) GetClubEventBySlug(ctx context.Context, slug string) (ClubEvent, error) {
-	row := q.db.QueryRow(ctx, getClubEventBySlug, slug)
+type GetClubEventBySlugParams struct {
+	ClubID pgtype.UUID
+	Slug   string
+}
+
+func (q *Queries) GetClubEventBySlug(ctx context.Context, arg GetClubEventBySlugParams) (ClubEvent, error) {
+	row := q.db.QueryRow(ctx, getClubEventBySlug, arg.ClubID, arg.Slug)
 	var i ClubEvent
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Kind,
@@ -188,8 +240,41 @@ func (q *Queries) GetClubEventBySlug(ctx context.Context, slug string) (ClubEven
 	return i, err
 }
 
+const getNewsPostByClubAndID = `-- name: GetNewsPostByClubAndID :one
+SELECT id, club_id, slug, title, excerpt, body_json, cover_url, cover_file_id, tag, author_name, author_id, status, published_at, reading_time, created_at, updated_at FROM news_posts WHERE club_id = $1 AND id = $2
+`
+
+type GetNewsPostByClubAndIDParams struct {
+	ClubID pgtype.UUID
+	ID     pgtype.UUID
+}
+
+func (q *Queries) GetNewsPostByClubAndID(ctx context.Context, arg GetNewsPostByClubAndIDParams) (NewsPost, error) {
+	row := q.db.QueryRow(ctx, getNewsPostByClubAndID, arg.ClubID, arg.ID)
+	var i NewsPost
+	err := row.Scan(
+		&i.ID,
+		&i.ClubID,
+		&i.Slug,
+		&i.Title,
+		&i.Excerpt,
+		&i.BodyJson,
+		&i.CoverUrl,
+		&i.CoverFileID,
+		&i.Tag,
+		&i.AuthorName,
+		&i.AuthorID,
+		&i.Status,
+		&i.PublishedAt,
+		&i.ReadingTime,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getNewsPostByID = `-- name: GetNewsPostByID :one
-SELECT id, slug, title, excerpt, body_json, cover_url, cover_file_id, tag, author_name, author_id, status, published_at, reading_time, created_at, updated_at FROM news_posts WHERE id = $1
+SELECT id, club_id, slug, title, excerpt, body_json, cover_url, cover_file_id, tag, author_name, author_id, status, published_at, reading_time, created_at, updated_at FROM news_posts WHERE id = $1
 `
 
 func (q *Queries) GetNewsPostByID(ctx context.Context, id pgtype.UUID) (NewsPost, error) {
@@ -197,6 +282,7 @@ func (q *Queries) GetNewsPostByID(ctx context.Context, id pgtype.UUID) (NewsPost
 	var i NewsPost
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Excerpt,
@@ -216,14 +302,20 @@ func (q *Queries) GetNewsPostByID(ctx context.Context, id pgtype.UUID) (NewsPost
 }
 
 const getNewsPostBySlug = `-- name: GetNewsPostBySlug :one
-SELECT id, slug, title, excerpt, body_json, cover_url, cover_file_id, tag, author_name, author_id, status, published_at, reading_time, created_at, updated_at FROM news_posts WHERE slug = $1
+SELECT id, club_id, slug, title, excerpt, body_json, cover_url, cover_file_id, tag, author_name, author_id, status, published_at, reading_time, created_at, updated_at FROM news_posts WHERE club_id = $1 AND slug = $2
 `
 
-func (q *Queries) GetNewsPostBySlug(ctx context.Context, slug string) (NewsPost, error) {
-	row := q.db.QueryRow(ctx, getNewsPostBySlug, slug)
+type GetNewsPostBySlugParams struct {
+	ClubID pgtype.UUID
+	Slug   string
+}
+
+func (q *Queries) GetNewsPostBySlug(ctx context.Context, arg GetNewsPostBySlugParams) (NewsPost, error) {
+	row := q.db.QueryRow(ctx, getNewsPostBySlug, arg.ClubID, arg.Slug)
 	var i NewsPost
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Excerpt,
@@ -243,13 +335,19 @@ func (q *Queries) GetNewsPostBySlug(ctx context.Context, slug string) (NewsPost,
 }
 
 const getPageBySlug = `-- name: GetPageBySlug :one
-SELECT slug, title, body_markdown, updated_by, created_at, updated_at FROM pages WHERE slug = $1
+SELECT club_id, slug, title, body_markdown, updated_by, created_at, updated_at FROM pages WHERE club_id = $1 AND slug = $2
 `
 
-func (q *Queries) GetPageBySlug(ctx context.Context, slug string) (Page, error) {
-	row := q.db.QueryRow(ctx, getPageBySlug, slug)
+type GetPageBySlugParams struct {
+	ClubID pgtype.UUID
+	Slug   string
+}
+
+func (q *Queries) GetPageBySlug(ctx context.Context, arg GetPageBySlugParams) (Page, error) {
+	row := q.db.QueryRow(ctx, getPageBySlug, arg.ClubID, arg.Slug)
 	var i Page
 	err := row.Scan(
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.BodyMarkdown,
@@ -261,21 +359,28 @@ func (q *Queries) GetPageBySlug(ctx context.Context, slug string) (Page, error) 
 }
 
 const listOrganizerEvents = `-- name: ListOrganizerEvents :many
-SELECT id, slug, title, kind, description, starts_at, location, cover_url, cover_file_id, seats_left, status, created_by, created_at, updated_at
+SELECT id, club_id, slug, title, kind, description, starts_at, location, cover_url, cover_file_id, seats_left, status, created_by, created_at, updated_at
 FROM club_events
-WHERE ($1::text IS NULL OR status = $1::content_status)
+WHERE club_id = $1
+  AND ($2::text IS NULL OR status = $2::content_status)
 ORDER BY starts_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $4 OFFSET $3
 `
 
 type ListOrganizerEventsParams struct {
+	ClubID      pgtype.UUID
 	Status      pgtype.Text
 	OffsetCount int32
 	LimitCount  int32
 }
 
 func (q *Queries) ListOrganizerEvents(ctx context.Context, arg ListOrganizerEventsParams) ([]ClubEvent, error) {
-	rows, err := q.db.Query(ctx, listOrganizerEvents, arg.Status, arg.OffsetCount, arg.LimitCount)
+	rows, err := q.db.Query(ctx, listOrganizerEvents,
+		arg.ClubID,
+		arg.Status,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -285,6 +390,7 @@ func (q *Queries) ListOrganizerEvents(ctx context.Context, arg ListOrganizerEven
 		var i ClubEvent
 		if err := rows.Scan(
 			&i.ID,
+			&i.ClubID,
 			&i.Slug,
 			&i.Title,
 			&i.Kind,
@@ -310,21 +416,28 @@ func (q *Queries) ListOrganizerEvents(ctx context.Context, arg ListOrganizerEven
 }
 
 const listOrganizerNews = `-- name: ListOrganizerNews :many
-SELECT id, slug, title, excerpt, body_json, cover_url, cover_file_id, tag, author_name, author_id, status, published_at, reading_time, created_at, updated_at
+SELECT id, club_id, slug, title, excerpt, body_json, cover_url, cover_file_id, tag, author_name, author_id, status, published_at, reading_time, created_at, updated_at
 FROM news_posts
-WHERE ($1::text IS NULL OR status = $1::content_status)
+WHERE club_id = $1
+  AND ($2::text IS NULL OR status = $2::content_status)
 ORDER BY updated_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $4 OFFSET $3
 `
 
 type ListOrganizerNewsParams struct {
+	ClubID      pgtype.UUID
 	Status      pgtype.Text
 	OffsetCount int32
 	LimitCount  int32
 }
 
 func (q *Queries) ListOrganizerNews(ctx context.Context, arg ListOrganizerNewsParams) ([]NewsPost, error) {
-	rows, err := q.db.Query(ctx, listOrganizerNews, arg.Status, arg.OffsetCount, arg.LimitCount)
+	rows, err := q.db.Query(ctx, listOrganizerNews,
+		arg.ClubID,
+		arg.Status,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -334,6 +447,7 @@ func (q *Queries) ListOrganizerNews(ctx context.Context, arg ListOrganizerNewsPa
 		var i NewsPost
 		if err := rows.Scan(
 			&i.ID,
+			&i.ClubID,
 			&i.Slug,
 			&i.Title,
 			&i.Excerpt,
@@ -360,11 +474,11 @@ func (q *Queries) ListOrganizerNews(ctx context.Context, arg ListOrganizerNewsPa
 }
 
 const listPages = `-- name: ListPages :many
-SELECT slug, title, body_markdown, updated_by, created_at, updated_at FROM pages ORDER BY slug ASC
+SELECT club_id, slug, title, body_markdown, updated_by, created_at, updated_at FROM pages WHERE club_id = $1 ORDER BY slug ASC
 `
 
-func (q *Queries) ListPages(ctx context.Context) ([]Page, error) {
-	rows, err := q.db.Query(ctx, listPages)
+func (q *Queries) ListPages(ctx context.Context, clubID pgtype.UUID) ([]Page, error) {
+	rows, err := q.db.Query(ctx, listPages, clubID)
 	if err != nil {
 		return nil, err
 	}
@@ -373,6 +487,7 @@ func (q *Queries) ListPages(ctx context.Context) ([]Page, error) {
 	for rows.Next() {
 		var i Page
 		if err := rows.Scan(
+			&i.ClubID,
 			&i.Slug,
 			&i.Title,
 			&i.BodyMarkdown,
@@ -391,22 +506,29 @@ func (q *Queries) ListPages(ctx context.Context) ([]Page, error) {
 }
 
 const listPublishedEvents = `-- name: ListPublishedEvents :many
-SELECT id, slug, title, kind, description, starts_at, location, cover_url, cover_file_id, seats_left, status, created_by, created_at, updated_at
+SELECT id, club_id, slug, title, kind, description, starts_at, location, cover_url, cover_file_id, seats_left, status, created_by, created_at, updated_at
 FROM club_events
-WHERE status = 'published'
-  AND ($1::text IS NULL OR kind = $1::club_event_kind)
+WHERE club_id = $1
+  AND status = 'published'
+  AND ($2::text IS NULL OR kind = $2::club_event_kind)
 ORDER BY starts_at ASC
-LIMIT $3 OFFSET $2
+LIMIT $4 OFFSET $3
 `
 
 type ListPublishedEventsParams struct {
+	ClubID      pgtype.UUID
 	Kind        pgtype.Text
 	OffsetCount int32
 	LimitCount  int32
 }
 
 func (q *Queries) ListPublishedEvents(ctx context.Context, arg ListPublishedEventsParams) ([]ClubEvent, error) {
-	rows, err := q.db.Query(ctx, listPublishedEvents, arg.Kind, arg.OffsetCount, arg.LimitCount)
+	rows, err := q.db.Query(ctx, listPublishedEvents,
+		arg.ClubID,
+		arg.Kind,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -416,6 +538,7 @@ func (q *Queries) ListPublishedEvents(ctx context.Context, arg ListPublishedEven
 		var i ClubEvent
 		if err := rows.Scan(
 			&i.ID,
+			&i.ClubID,
 			&i.Slug,
 			&i.Title,
 			&i.Kind,
@@ -441,22 +564,29 @@ func (q *Queries) ListPublishedEvents(ctx context.Context, arg ListPublishedEven
 }
 
 const listPublishedNews = `-- name: ListPublishedNews :many
-SELECT id, slug, title, excerpt, body_json, cover_url, cover_file_id, tag, author_name, author_id, status, published_at, reading_time, created_at, updated_at
+SELECT id, club_id, slug, title, excerpt, body_json, cover_url, cover_file_id, tag, author_name, author_id, status, published_at, reading_time, created_at, updated_at
 FROM news_posts
-WHERE status = 'published'
-  AND ($1::text IS NULL OR tag = $1)
+WHERE club_id = $1
+  AND status = 'published'
+  AND ($2::text IS NULL OR tag = $2)
 ORDER BY published_at DESC NULLS LAST, created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $4 OFFSET $3
 `
 
 type ListPublishedNewsParams struct {
+	ClubID      pgtype.UUID
 	Tag         pgtype.Text
 	OffsetCount int32
 	LimitCount  int32
 }
 
 func (q *Queries) ListPublishedNews(ctx context.Context, arg ListPublishedNewsParams) ([]NewsPost, error) {
-	rows, err := q.db.Query(ctx, listPublishedNews, arg.Tag, arg.OffsetCount, arg.LimitCount)
+	rows, err := q.db.Query(ctx, listPublishedNews,
+		arg.ClubID,
+		arg.Tag,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -466,6 +596,7 @@ func (q *Queries) ListPublishedNews(ctx context.Context, arg ListPublishedNewsPa
 		var i NewsPost
 		if err := rows.Scan(
 			&i.ID,
+			&i.ClubID,
 			&i.Slug,
 			&i.Title,
 			&i.Excerpt,
@@ -492,11 +623,18 @@ func (q *Queries) ListPublishedNews(ctx context.Context, arg ListPublishedNewsPa
 }
 
 const newsSlugExists = `-- name: NewsSlugExists :one
-SELECT EXISTS(SELECT 1 FROM news_posts WHERE slug = $1)::bool AS exists
+SELECT EXISTS(
+    SELECT 1 FROM news_posts WHERE club_id = $1 AND slug = $2
+)::bool AS exists
 `
 
-func (q *Queries) NewsSlugExists(ctx context.Context, slug string) (bool, error) {
-	row := q.db.QueryRow(ctx, newsSlugExists, slug)
+type NewsSlugExistsParams struct {
+	ClubID pgtype.UUID
+	Slug   string
+}
+
+func (q *Queries) NewsSlugExists(ctx context.Context, arg NewsSlugExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, newsSlugExists, arg.ClubID, arg.Slug)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -514,7 +652,7 @@ SET title = $2,
     status = $9,
     updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, kind, description, starts_at, location, cover_url, cover_file_id, seats_left, status, created_by, created_at, updated_at
+RETURNING id, club_id, slug, title, kind, description, starts_at, location, cover_url, cover_file_id, seats_left, status, created_by, created_at, updated_at
 `
 
 type UpdateClubEventParams struct {
@@ -544,6 +682,7 @@ func (q *Queries) UpdateClubEvent(ctx context.Context, arg UpdateClubEventParams
 	var i ClubEvent
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Kind,
@@ -574,7 +713,7 @@ SET title = $2,
     reading_time = $10,
     updated_at = now()
 WHERE id = $1
-RETURNING id, slug, title, excerpt, body_json, cover_url, cover_file_id, tag, author_name, author_id, status, published_at, reading_time, created_at, updated_at
+RETURNING id, club_id, slug, title, excerpt, body_json, cover_url, cover_file_id, tag, author_name, author_id, status, published_at, reading_time, created_at, updated_at
 `
 
 type UpdateNewsPostParams struct {
@@ -606,6 +745,7 @@ func (q *Queries) UpdateNewsPost(ctx context.Context, arg UpdateNewsPostParams) 
 	var i NewsPost
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.Excerpt,
@@ -625,17 +765,18 @@ func (q *Queries) UpdateNewsPost(ctx context.Context, arg UpdateNewsPostParams) 
 }
 
 const upsertPage = `-- name: UpsertPage :one
-INSERT INTO pages (slug, title, body_markdown, updated_by)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (slug) DO UPDATE
+INSERT INTO pages (club_id, slug, title, body_markdown, updated_by)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (club_id, slug) DO UPDATE
 SET title = EXCLUDED.title,
     body_markdown = EXCLUDED.body_markdown,
     updated_by = EXCLUDED.updated_by,
     updated_at = now()
-RETURNING slug, title, body_markdown, updated_by, created_at, updated_at
+RETURNING club_id, slug, title, body_markdown, updated_by, created_at, updated_at
 `
 
 type UpsertPageParams struct {
+	ClubID       pgtype.UUID
 	Slug         string
 	Title        string
 	BodyMarkdown string
@@ -644,6 +785,7 @@ type UpsertPageParams struct {
 
 func (q *Queries) UpsertPage(ctx context.Context, arg UpsertPageParams) (Page, error) {
 	row := q.db.QueryRow(ctx, upsertPage,
+		arg.ClubID,
 		arg.Slug,
 		arg.Title,
 		arg.BodyMarkdown,
@@ -651,6 +793,7 @@ func (q *Queries) UpsertPage(ctx context.Context, arg UpsertPageParams) (Page, e
 	)
 	var i Page
 	err := row.Scan(
+		&i.ClubID,
 		&i.Slug,
 		&i.Title,
 		&i.BodyMarkdown,

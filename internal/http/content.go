@@ -107,7 +107,7 @@ func (s *Server) handleListPublicNews(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetPublicNews(w http.ResponseWriter, r *http.Request) {
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
-	row, err := s.store.Queries.GetNewsPostBySlug(r.Context(), slug)
+	row, err := s.store.Queries.GetNewsPostBySlug(r.Context(), sqlc.GetNewsPostBySlugParams{ClubID: s.currentClubID(r), Slug: slug})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Новость не найдена")
@@ -227,7 +227,7 @@ func (s *Server) handleListPublicEvents(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleGetPublicEvent(w http.ResponseWriter, r *http.Request) {
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
-	row, err := s.store.Queries.GetClubEventBySlug(r.Context(), slug)
+	row, err := s.store.Queries.GetClubEventBySlug(r.Context(), sqlc.GetClubEventBySlugParams{ClubID: s.currentClubID(r), Slug: slug})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Событие не найдено")
@@ -326,7 +326,7 @@ func (s *Server) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListPages(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.store.Queries.ListPages(r.Context())
+	rows, err := s.store.Queries.ListPages(r.Context(), s.currentClubID(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить страницы")
 		return
@@ -340,7 +340,7 @@ func (s *Server) handleListPages(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetPage(w http.ResponseWriter, r *http.Request) {
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
-	row, err := s.store.Queries.GetPageBySlug(r.Context(), slug)
+	row, err := s.store.Queries.GetPageBySlug(r.Context(), sqlc.GetPageBySlugParams{ClubID: s.currentClubID(r), Slug: slug})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Страница не найдена")

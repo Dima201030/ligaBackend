@@ -3,6 +3,7 @@ package rating
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -47,43 +48,64 @@ func RunNightly(ctx context.Context, store *db.Store, opts NightlyOptions) (Nigh
 	}
 
 	now := time.Now().In(opts.Location)
-	if !opts.Force {
-		done, err := SnapshotExistsOnLocalDay(ctx, store, opts.Season, now)
-		if err != nil {
-			return NightlyResult{}, err
-		}
-		if done {
-			logger.Printf("rankingsnapshot: skip season=%d — already snapshotted today (%s)", opts.Season, now.Format("2006-01-02"))
-			return NightlyResult{
-				Season:     opts.Season,
-				Skipped:    true,
-				SkipReason: "already_today",
-			}, nil
-		}
+	clubList, err := store.Queries.ListActiveClubs(ctx)
+	if err != nil {
+		return NightlyResult{}, err
+	}
+	if len(clubList) == 0 {
+		return NightlyResult{Season: opts.Season, Skipped: true, SkipReason: "no_clubs"}, nil
 	}
 
-	updated, err := RecalcPointsFromWindow(ctx, store, opts.Season, now)
-	if err != nil {
-		return NightlyResult{}, err
+	totalUpdated := 0
+	totalPlayers := 0
+	var lastAt time.Time
+	skippedAll := true
+	for _, club := range clubList {
+		if !opts.Force {
+			done, err := SnapshotExistsOnLocalDay(ctx, store, club.ID, opts.Season, now)
+			if err != nil {
+				return NightlyResult{}, err
+			}
+			if done {
+				logger.Printf("rankingsnapshot: skip club=%s season=%d — already snapshotted today (%s)",
+					club.Slug, opts.Season, now.Format("2006-01-02"))
+				continue
+			}
+		}
+		skippedAll = false
+		updated, err := RecalcPointsFromWindow(ctx, store, club.ID, opts.Season, now)
+		if err != nil {
+			return NightlyResult{}, fmt.Errorf("club %s recalc: %w", club.Slug, err)
+		}
+		at, n, err := Snapshot(ctx, store, club.ID, opts.Season)
+		if err != nil {
+			return NightlyResult{}, fmt.Errorf("club %s snapshot: %w", club.Slug, err)
+		}
+		totalUpdated += updated
+		totalPlayers += n
+		lastAt = at
+		logger.Printf("rankingsnapshot: club=%s season=%d points_updated=%d players=%d at=%s",
+			club.Slug, opts.Season, updated, n, at.UTC().Format(time.RFC3339))
 	}
-	at, n, err := Snapshot(ctx, store, opts.Season)
-	if err != nil {
-		return NightlyResult{}, err
+	if skippedAll {
+		return NightlyResult{
+			Season:     opts.Season,
+			Skipped:    true,
+			SkipReason: "already_today",
+		}, nil
 	}
-	logger.Printf("rankingsnapshot: season=%d points_updated=%d players=%d at=%s",
-		opts.Season, updated, n, at.UTC().Format(time.RFC3339))
 	return NightlyResult{
 		Season:        opts.Season,
-		PointsUpdated: updated,
-		SnapshotAt:    at,
-		Players:       n,
+		PointsUpdated: totalUpdated,
+		SnapshotAt:    lastAt,
+		Players:       totalPlayers,
 	}, nil
 }
 
 // RecalcPointsFromWindow sets profile singles/doubles/points from best tournament results
 // in the config window (best BestSingles singles + best BestDoubles doubles).
-func RecalcPointsFromWindow(ctx context.Context, store *db.Store, season int32, now time.Time) (int, error) {
-	_, coeffs, err := loadConfig(ctx, store.Queries, season)
+func RecalcPointsFromWindow(ctx context.Context, store *db.Store, clubID pgtype.UUID, season int32, now time.Time) (int, error) {
+	_, coeffs, err := loadConfig(ctx, store.Queries, clubID, season)
 	if err != nil {
 		return 0, err
 	}
@@ -93,7 +115,10 @@ func RecalcPointsFromWindow(ctx context.Context, store *db.Store, season int32, 
 	}
 	since := now.UTC().Add(-time.Duration(weeks) * 7 * 24 * time.Hour)
 
-	rows, err := store.Queries.ListTournamentPointEventsInWindow(ctx, pgtype.Timestamptz{Time: since, Valid: true})
+	rows, err := store.Queries.ListTournamentPointEventsInWindow(ctx, sqlc.ListTournamentPointEventsInWindowParams{
+		ClubID:    clubID,
+		CreatedAt: pgtype.Timestamptz{Time: since, Valid: true},
+	})
 	if err != nil {
 		return 0, err
 	}
@@ -136,8 +161,11 @@ func RecalcPointsFromWindow(ctx context.Context, store *db.Store, season int32, 
 }
 
 // SnapshotExistsOnLocalDay reports whether a rankings row exists for season on the local date of now.
-func SnapshotExistsOnLocalDay(ctx context.Context, store *db.Store, season int32, now time.Time) (bool, error) {
-	at, err := store.Queries.LatestRankingCalculatedAt(ctx, season)
+func SnapshotExistsOnLocalDay(ctx context.Context, store *db.Store, clubID pgtype.UUID, season int32, now time.Time) (bool, error) {
+	at, err := store.Queries.LatestRankingCalculatedAt(ctx, sqlc.LatestRankingCalculatedAtParams{
+		ClubID: clubID,
+		Season: season,
+	})
 	if err != nil {
 		if errorsIsNoRows(err) {
 			return false, nil

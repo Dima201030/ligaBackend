@@ -1,8 +1,8 @@
 -- name: CreateFile :one
 INSERT INTO files (
-    bucket, path, original_name, mime, size, width, height, checksum, uploaded_by
+    club_id, bucket, path, original_name, mime, size, width, height, checksum, uploaded_by
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 )
 RETURNING *;
 
@@ -10,6 +10,11 @@ RETURNING *;
 SELECT *
 FROM files
 WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: GetFileByClubAndID :one
+SELECT *
+FROM files
+WHERE club_id = $1 AND id = $2 AND deleted_at IS NULL;
 
 -- name: SoftDeleteFile :one
 UPDATE files

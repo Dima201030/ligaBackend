@@ -67,7 +67,8 @@ SELECT
     p.level
 FROM users u
 JOIN profiles p ON p.user_id = u.id
-WHERE u.role = 'player'
+WHERE p.club_id = $1
+  AND u.role = 'player'
 ORDER BY
     CASE u.status WHEN 'pending' THEN 0 ELSE 1 END,
     u.created_at DESC;

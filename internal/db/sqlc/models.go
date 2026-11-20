@@ -99,6 +99,136 @@ func (ns NullClubEventKind) Value() (driver.Value, error) {
 	return string(ns.ClubEventKind), nil
 }
 
+type ClubMemberRole string
+
+const (
+	ClubMemberRolePlayer    ClubMemberRole = "player"
+	ClubMemberRoleOrganizer ClubMemberRole = "organizer"
+	ClubMemberRoleOwner     ClubMemberRole = "owner"
+)
+
+func (e *ClubMemberRole) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ClubMemberRole(s)
+	case string:
+		*e = ClubMemberRole(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ClubMemberRole: %T", src)
+	}
+	return nil
+}
+
+type NullClubMemberRole struct {
+	ClubMemberRole ClubMemberRole
+	Valid          bool // Valid is true if ClubMemberRole is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullClubMemberRole) Scan(value interface{}) error {
+	if value == nil {
+		ns.ClubMemberRole, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ClubMemberRole.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullClubMemberRole) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ClubMemberRole), nil
+}
+
+type ClubMemberStatus string
+
+const (
+	ClubMemberStatusActive  ClubMemberStatus = "active"
+	ClubMemberStatusInvited ClubMemberStatus = "invited"
+	ClubMemberStatusBlocked ClubMemberStatus = "blocked"
+	ClubMemberStatusLeft    ClubMemberStatus = "left"
+)
+
+func (e *ClubMemberStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ClubMemberStatus(s)
+	case string:
+		*e = ClubMemberStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ClubMemberStatus: %T", src)
+	}
+	return nil
+}
+
+type NullClubMemberStatus struct {
+	ClubMemberStatus ClubMemberStatus
+	Valid            bool // Valid is true if ClubMemberStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullClubMemberStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ClubMemberStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ClubMemberStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullClubMemberStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ClubMemberStatus), nil
+}
+
+type ClubStatus string
+
+const (
+	ClubStatusActive    ClubStatus = "active"
+	ClubStatusSuspended ClubStatus = "suspended"
+	ClubStatusArchived  ClubStatus = "archived"
+)
+
+func (e *ClubStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ClubStatus(s)
+	case string:
+		*e = ClubStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ClubStatus: %T", src)
+	}
+	return nil
+}
+
+type NullClubStatus struct {
+	ClubStatus ClubStatus
+	Valid      bool // Valid is true if ClubStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullClubStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ClubStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ClubStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullClubStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ClubStatus), nil
+}
+
 type ContentStatus string
 
 const (
@@ -647,8 +777,20 @@ type AuditLog struct {
 	CreatedAt pgtype.Timestamptz
 }
 
+type Club struct {
+	ID        pgtype.UUID
+	Slug      string
+	Name      string
+	City      string
+	Status    ClubStatus
+	Settings  []byte
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
 type ClubEvent struct {
 	ID          pgtype.UUID
+	ClubID      pgtype.UUID
 	Slug        string
 	Title       string
 	Kind        ClubEventKind
@@ -662,6 +804,16 @@ type ClubEvent struct {
 	CreatedBy   pgtype.UUID
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
+}
+
+type ClubMembership struct {
+	ID        pgtype.UUID
+	ClubID    pgtype.UUID
+	UserID    pgtype.UUID
+	Role      ClubMemberRole
+	Status    ClubMemberStatus
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
 }
 
 type EmailOutbox struct {
@@ -679,6 +831,7 @@ type EmailOutbox struct {
 
 type File struct {
 	ID           pgtype.UUID
+	ClubID       pgtype.UUID
 	Bucket       string
 	Path         string
 	OriginalName string
@@ -730,6 +883,7 @@ type MatchSide struct {
 
 type NewsPost struct {
 	ID          pgtype.UUID
+	ClubID      pgtype.UUID
 	Slug        string
 	Title       string
 	Excerpt     string
@@ -747,6 +901,7 @@ type NewsPost struct {
 }
 
 type Page struct {
+	ClubID       pgtype.UUID
 	Slug         string
 	Title        string
 	BodyMarkdown string
@@ -757,6 +912,7 @@ type Page struct {
 
 type Profile struct {
 	UserID        pgtype.UUID
+	ClubID        pgtype.UUID
 	Phone         pgtype.Text
 	Level         string
 	Slug          string
@@ -779,6 +935,7 @@ type Profile struct {
 
 type Ranking struct {
 	ID               pgtype.UUID
+	ClubID           pgtype.UUID
 	Season           int32
 	PlayerID         pgtype.UUID
 	Position         int32
@@ -793,6 +950,7 @@ type Ranking struct {
 
 type RatingConfig struct {
 	ID           pgtype.UUID
+	ClubID       pgtype.UUID
 	Season       int32
 	Version      int32
 	Coefficients []byte
@@ -847,6 +1005,7 @@ type Session struct {
 
 type Tournament struct {
 	ID                   pgtype.UUID
+	ClubID               pgtype.UUID
 	Slug                 string
 	Title                string
 	Description          string

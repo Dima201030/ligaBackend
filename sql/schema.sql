@@ -19,6 +19,40 @@ CREATE TABLE users (
 
 CREATE UNIQUE INDEX users_email_uidx ON users (email);
 
+CREATE TYPE club_status AS ENUM ('active', 'suspended', 'archived');
+CREATE TYPE club_member_role AS ENUM ('player', 'organizer', 'owner');
+CREATE TYPE club_member_status AS ENUM ('active', 'invited', 'blocked', 'left');
+
+CREATE TABLE clubs (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug        TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    city        TEXT NOT NULL DEFAULT '',
+    status      club_status NOT NULL DEFAULT 'active',
+    settings    JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT clubs_slug_uidx UNIQUE (slug),
+    CONSTRAINT clubs_slug_chk CHECK (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'),
+    CONSTRAINT clubs_name_chk CHECK (char_length(trim(name)) >= 2)
+);
+
+CREATE INDEX clubs_status_idx ON clubs (status);
+
+CREATE TABLE club_memberships (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    club_id     UUID NOT NULL REFERENCES clubs (id) ON DELETE CASCADE,
+    user_id     UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    role        club_member_role NOT NULL DEFAULT 'player',
+    status      club_member_status NOT NULL DEFAULT 'active',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT club_memberships_club_user_uidx UNIQUE (club_id, user_id)
+);
+
+CREATE INDEX club_memberships_user_id_idx ON club_memberships (user_id);
+CREATE INDEX club_memberships_club_status_idx ON club_memberships (club_id, status);
+
 CREATE TABLE sessions (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -39,6 +73,7 @@ CREATE INDEX sessions_active_idx ON sessions (expires_at)
 
 CREATE TABLE profiles (
     user_id         UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    club_id         UUID NOT NULL REFERENCES clubs (id),
     phone           TEXT,
     level           TEXT NOT NULL,
     slug            TEXT NOT NULL,
@@ -60,7 +95,7 @@ CREATE TABLE profiles (
     CONSTRAINT profiles_level_chk CHECK (
         level IN ('masters', 'challenger', 'futures', 'rookies', 'beginners', 'newcomers')
     ),
-    CONSTRAINT profiles_slug_uidx UNIQUE (slug),
+    CONSTRAINT profiles_club_slug_uidx UNIQUE (club_id, slug),
     CONSTRAINT profiles_gender_chk CHECK (gender IS NULL OR gender IN ('male', 'female')),
     CONSTRAINT profiles_player_status_chk CHECK (player_status IN ('active', 'blocked', 'archived')),
     CONSTRAINT profiles_rating_chk CHECK (rating >= 800),
@@ -72,6 +107,7 @@ CREATE TABLE profiles (
     CONSTRAINT profiles_losses_chk CHECK (losses >= 0)
 );
 
+CREATE INDEX profiles_club_id_idx ON profiles (club_id);
 CREATE INDEX profiles_rating_idx ON profiles (rating DESC);
 CREATE INDEX profiles_points_idx ON profiles (points DESC);
 CREATE INDEX profiles_level_idx ON profiles (level);
@@ -180,6 +216,7 @@ CREATE TYPE bracket_status AS ENUM (
 
 CREATE TABLE tournaments (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    club_id                 UUID NOT NULL REFERENCES clubs (id),
     slug                    TEXT NOT NULL,
     title                   TEXT NOT NULL,
     description             TEXT NOT NULL DEFAULT '',
@@ -208,7 +245,7 @@ CREATE TABLE tournaments (
     bracket_third_place     BOOLEAN NOT NULL DEFAULT false,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT tournaments_slug_uidx UNIQUE (slug),
+    CONSTRAINT tournaments_club_slug_uidx UNIQUE (club_id, slug),
     CONSTRAINT tournaments_title_chk CHECK (char_length(trim(title)) >= 3),
     CONSTRAINT tournaments_max_participants_chk CHECK (max_participants >= 2 AND max_participants <= 256),
     CONSTRAINT tournaments_entry_fee_chk CHECK (entry_fee >= 0),
@@ -221,6 +258,8 @@ CREATE TABLE tournaments (
     CONSTRAINT tournaments_opens_before_closes_chk CHECK (registration_opens_at <= registration_closes_at)
 );
 
+CREATE INDEX tournaments_club_id_idx ON tournaments (club_id);
+CREATE INDEX tournaments_club_status_idx ON tournaments (club_id, status);
 CREATE INDEX tournaments_starts_at_idx ON tournaments (starts_at);
 CREATE INDEX tournaments_status_idx ON tournaments (status);
 CREATE INDEX tournaments_season_idx ON tournaments (season);
@@ -337,16 +376,18 @@ CREATE TYPE rating_event_kind AS ENUM (
 
 CREATE TABLE rating_configs (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    club_id         UUID NOT NULL REFERENCES clubs (id),
     season          INT NOT NULL,
     version         INT NOT NULL,
     coefficients    JSONB NOT NULL,
     active_from     TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_by      UUID REFERENCES users (id) ON DELETE SET NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT rating_configs_season_version_uidx UNIQUE (season, version),
+    CONSTRAINT rating_configs_club_season_version_uidx UNIQUE (club_id, season, version),
     CONSTRAINT rating_configs_version_chk CHECK (version >= 1)
 );
 
+CREATE INDEX rating_configs_club_season_idx ON rating_configs (club_id, season, version DESC);
 CREATE INDEX rating_configs_season_idx ON rating_configs (season, version DESC);
 
 CREATE TABLE rating_events (
@@ -384,6 +425,7 @@ CREATE INDEX rating_events_discipline_idx ON rating_events (discipline)
 
 CREATE TABLE rankings (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    club_id             UUID NOT NULL REFERENCES clubs (id),
     season              INT NOT NULL,
     player_id           UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     position            INT NOT NULL,
@@ -394,7 +436,7 @@ CREATE TABLE rankings (
     doubles_points      INT NOT NULL DEFAULT 0,
     category            TEXT NOT NULL,
     calculated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT rankings_season_player_calc_uidx UNIQUE (season, player_id, calculated_at),
+    CONSTRAINT rankings_club_season_player_calc_uidx UNIQUE (club_id, season, player_id, calculated_at),
     CONSTRAINT rankings_position_chk CHECK (position >= 1),
     CONSTRAINT rankings_points_chk CHECK (points >= 0),
     CONSTRAINT rankings_category_chk CHECK (
@@ -402,6 +444,8 @@ CREATE TABLE rankings (
     )
 );
 
+CREATE INDEX rankings_club_season_calc_idx ON rankings (club_id, season, calculated_at DESC);
+CREATE INDEX rankings_club_season_position_idx ON rankings (club_id, season, calculated_at DESC, position);
 CREATE INDEX rankings_season_calc_idx ON rankings (season, calculated_at DESC);
 CREATE INDEX rankings_season_position_idx ON rankings (season, calculated_at DESC, position);
 
@@ -411,6 +455,7 @@ CREATE TYPE club_event_kind AS ENUM ('tournament', 'camp', 'school', 'club');
 
 CREATE TABLE news_posts (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    club_id         UUID NOT NULL REFERENCES clubs (id),
     slug            TEXT NOT NULL,
     title           TEXT NOT NULL,
     excerpt         TEXT NOT NULL DEFAULT '',
@@ -425,16 +470,19 @@ CREATE TABLE news_posts (
     reading_time    INT NOT NULL DEFAULT 1,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT news_posts_slug_uidx UNIQUE (slug),
+    CONSTRAINT news_posts_club_slug_uidx UNIQUE (club_id, slug),
     CONSTRAINT news_posts_title_chk CHECK (char_length(trim(title)) >= 3),
     CONSTRAINT news_posts_reading_time_chk CHECK (reading_time >= 1 AND reading_time <= 120)
 );
 
+CREATE INDEX news_posts_club_id_idx ON news_posts (club_id);
+CREATE INDEX news_posts_club_status_published_idx ON news_posts (club_id, status, published_at DESC);
 CREATE INDEX news_posts_status_published_idx ON news_posts (status, published_at DESC);
 CREATE INDEX news_posts_tag_idx ON news_posts (tag);
 
 CREATE TABLE club_events (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    club_id         UUID NOT NULL REFERENCES clubs (id),
     slug            TEXT NOT NULL,
     title           TEXT NOT NULL,
     kind            club_event_kind NOT NULL DEFAULT 'club',
@@ -448,27 +496,34 @@ CREATE TABLE club_events (
     created_by      UUID REFERENCES users (id) ON DELETE SET NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT club_events_slug_uidx UNIQUE (slug),
+    CONSTRAINT club_events_club_slug_uidx UNIQUE (club_id, slug),
     CONSTRAINT club_events_title_chk CHECK (char_length(trim(title)) >= 3),
     CONSTRAINT club_events_seats_chk CHECK (seats_left IS NULL OR seats_left >= 0)
 );
 
+CREATE INDEX club_events_club_id_idx ON club_events (club_id);
+CREATE INDEX club_events_club_status_starts_idx ON club_events (club_id, status, starts_at ASC);
 CREATE INDEX club_events_status_starts_idx ON club_events (status, starts_at ASC);
 CREATE INDEX club_events_kind_idx ON club_events (kind);
 
 CREATE TABLE pages (
-    slug            TEXT PRIMARY KEY,
+    club_id         UUID NOT NULL REFERENCES clubs (id),
+    slug            TEXT NOT NULL,
     title           TEXT NOT NULL,
     body_markdown   TEXT NOT NULL DEFAULT '',
     updated_by      UUID REFERENCES users (id) ON DELETE SET NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (club_id, slug),
     CONSTRAINT pages_title_chk CHECK (char_length(trim(title)) >= 2),
     CONSTRAINT pages_slug_chk CHECK (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$')
 );
 
+CREATE INDEX pages_club_id_idx ON pages (club_id);
+
 CREATE TABLE files (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    club_id         UUID NOT NULL REFERENCES clubs (id),
     bucket          TEXT NOT NULL DEFAULT 'uploads',
     path            TEXT NOT NULL,
     original_name   TEXT NOT NULL DEFAULT '',
@@ -487,5 +542,6 @@ CREATE TABLE files (
     ))
 );
 
+CREATE INDEX files_club_id_idx ON files (club_id);
 CREATE INDEX files_uploaded_by_idx ON files (uploaded_by);
 CREATE INDEX files_created_at_idx ON files (created_at DESC);

@@ -1,12 +1,12 @@
 -- name: GetLatestRatingConfig :one
-SELECT id, season, version, coefficients, active_from, created_by, created_at
+SELECT id, club_id, season, version, coefficients, active_from, created_by, created_at
 FROM rating_configs
-WHERE season = $1
+WHERE club_id = $1 AND season = $2
 ORDER BY version DESC
 LIMIT 1;
 
 -- name: GetRatingConfigByID :one
-SELECT id, season, version, coefficients, active_from, created_by, created_at
+SELECT id, club_id, season, version, coefficients, active_from, created_by, created_at
 FROM rating_configs
 WHERE id = $1;
 
@@ -42,11 +42,13 @@ ORDER BY created_at DESC
 LIMIT $2;
 
 -- name: ListTournamentPointEventsInWindow :many
-SELECT player_id, points_delta, tournament_id, discipline, created_at
-FROM rating_events
-WHERE kind = 'tournament'
-  AND created_at >= $1
-ORDER BY player_id, points_delta DESC;
+SELECT e.player_id, e.points_delta, e.tournament_id, e.discipline, e.created_at
+FROM rating_events e
+JOIN tournaments t ON t.id = e.tournament_id
+WHERE e.kind = 'tournament'
+  AND t.club_id = $1
+  AND e.created_at >= $2
+ORDER BY e.player_id, e.points_delta DESC;
 
 -- name: ApplyProfileRatingDelta :one
 UPDATE profiles
@@ -75,7 +77,7 @@ WHERE user_id = sqlc.arg(user_id)
 RETURNING *;
 
 -- name: LockProfileForUpdate :one
-SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
+SELECT user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
        rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
 WHERE user_id = $1
@@ -83,42 +85,47 @@ FOR UPDATE;
 
 -- name: InsertRankingRow :one
 INSERT INTO rankings (
-    season, player_id, position, previous_position,
+    club_id, season, player_id, position, previous_position,
     points, rating, singles_points, doubles_points, category, calculated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 )
 RETURNING *;
 
 -- name: LatestRankingCalculatedAt :one
 SELECT calculated_at
 FROM rankings
-WHERE rankings.season = $1
+WHERE club_id = $1 AND rankings.season = $2
 ORDER BY calculated_at DESC
 LIMIT 1;
 
 -- name: ListLatestRankings :many
-SELECT r.id, r.season, r.player_id, r.position, r.previous_position,
+SELECT r.id, r.club_id, r.season, r.player_id, r.position, r.previous_position,
        r.points, r.rating, r.singles_points, r.doubles_points, r.category, r.calculated_at,
        u.first_name, u.last_name, p.slug, p.level, p.player_status, p.avatar_url
 FROM rankings r
 JOIN users u ON u.id = r.player_id
-JOIN profiles p ON p.user_id = r.player_id
-WHERE r.season = $1
+JOIN profiles p ON p.user_id = r.player_id AND p.club_id = r.club_id
+WHERE r.club_id = $1
+  AND r.season = $2
   AND r.calculated_at = (
-      SELECT r2.calculated_at FROM rankings r2 WHERE r2.season = $1 ORDER BY r2.calculated_at DESC LIMIT 1
+      SELECT r2.calculated_at FROM rankings r2
+      WHERE r2.club_id = $1 AND r2.season = $2
+      ORDER BY r2.calculated_at DESC LIMIT 1
   )
   AND (sqlc.narg(category)::text IS NULL OR r.category = sqlc.narg(category))
 ORDER BY r.position ASC;
 
 -- name: ListPreviousPositions :many
-SELECT player_id, position
+SELECT rankings.player_id, rankings.position
 FROM rankings
-WHERE rankings.season = $1
-  AND calculated_at = (
+WHERE rankings.club_id = $1
+  AND rankings.season = $2
+  AND rankings.calculated_at = (
       SELECT r2.calculated_at FROM rankings r2
-      WHERE r2.season = $1
-        AND r2.calculated_at < $2
+      WHERE r2.club_id = $1
+        AND r2.season = $2
+        AND r2.calculated_at < $3
       ORDER BY r2.calculated_at DESC
       LIMIT 1
   );

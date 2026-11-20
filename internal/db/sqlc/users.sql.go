@@ -199,7 +199,8 @@ SELECT
     p.level
 FROM users u
 JOIN profiles p ON p.user_id = u.id
-WHERE u.role = 'player'
+WHERE p.club_id = $1
+  AND u.role = 'player'
 ORDER BY
     CASE u.status WHEN 'pending' THEN 0 ELSE 1 END,
     u.created_at DESC
@@ -219,8 +220,8 @@ type ListApplicationsRow struct {
 	Level           string
 }
 
-func (q *Queries) ListApplications(ctx context.Context) ([]ListApplicationsRow, error) {
-	rows, err := q.db.Query(ctx, listApplications)
+func (q *Queries) ListApplications(ctx context.Context, clubID pgtype.UUID) ([]ListApplicationsRow, error) {
+	rows, err := q.db.Query(ctx, listApplications, clubID)
 	if err != nil {
 		return nil, err
 	}

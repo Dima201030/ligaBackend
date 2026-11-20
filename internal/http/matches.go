@@ -61,7 +61,7 @@ type scheduleRequest struct {
 
 func (s *Server) handleGetPublicBracket(w http.ResponseWriter, r *http.Request) {
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
-	tour, err := s.store.Queries.GetTournamentBySlug(r.Context(), slug)
+	tour, err := s.store.Queries.GetTournamentBySlug(r.Context(), sqlc.GetTournamentBySlugParams{ClubID: s.currentClubID(r), Slug: slug})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
@@ -89,7 +89,7 @@ func (s *Server) handleGetPublicBracket(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleGetPublicTournamentMatches(w http.ResponseWriter, r *http.Request) {
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
-	tour, err := s.store.Queries.GetTournamentBySlug(r.Context(), slug)
+	tour, err := s.store.Queries.GetTournamentBySlug(r.Context(), sqlc.GetTournamentBySlugParams{ClubID: s.currentClubID(r), Slug: slug})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
@@ -240,7 +240,7 @@ func (s *Server) handlePublishBracket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListOrganizerMatches(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.store.Queries.ListOrganizerMatches(r.Context())
+	rows, err := s.store.Queries.ListOrganizerMatches(r.Context(), s.currentClubID(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить матчи")
 		return

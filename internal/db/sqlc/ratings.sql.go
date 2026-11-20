@@ -20,7 +20,7 @@ SET rating = $1,
     losses = losses + $5,
     updated_at = now()
 WHERE user_id = $6
-RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 `
 
 type ApplyProfileRatingDeltaParams struct {
@@ -44,6 +44,7 @@ func (q *Queries) ApplyProfileRatingDelta(ctx context.Context, arg ApplyProfileR
 	var i Profile
 	err := row.Scan(
 		&i.UserID,
+		&i.ClubID,
 		&i.Phone,
 		&i.Level,
 		&i.Slug,
@@ -105,18 +106,24 @@ func (q *Queries) CountMainDrawWins(ctx context.Context, arg CountMainDrawWinsPa
 }
 
 const getLatestRatingConfig = `-- name: GetLatestRatingConfig :one
-SELECT id, season, version, coefficients, active_from, created_by, created_at
+SELECT id, club_id, season, version, coefficients, active_from, created_by, created_at
 FROM rating_configs
-WHERE season = $1
+WHERE club_id = $1 AND season = $2
 ORDER BY version DESC
 LIMIT 1
 `
 
-func (q *Queries) GetLatestRatingConfig(ctx context.Context, season int32) (RatingConfig, error) {
-	row := q.db.QueryRow(ctx, getLatestRatingConfig, season)
+type GetLatestRatingConfigParams struct {
+	ClubID pgtype.UUID
+	Season int32
+}
+
+func (q *Queries) GetLatestRatingConfig(ctx context.Context, arg GetLatestRatingConfigParams) (RatingConfig, error) {
+	row := q.db.QueryRow(ctx, getLatestRatingConfig, arg.ClubID, arg.Season)
 	var i RatingConfig
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Season,
 		&i.Version,
 		&i.Coefficients,
@@ -194,7 +201,7 @@ func (q *Queries) GetPlayerTournamentWinStats(ctx context.Context, arg GetPlayer
 }
 
 const getRatingConfigByID = `-- name: GetRatingConfigByID :one
-SELECT id, season, version, coefficients, active_from, created_by, created_at
+SELECT id, club_id, season, version, coefficients, active_from, created_by, created_at
 FROM rating_configs
 WHERE id = $1
 `
@@ -204,6 +211,7 @@ func (q *Queries) GetRatingConfigByID(ctx context.Context, id pgtype.UUID) (Rati
 	var i RatingConfig
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Season,
 		&i.Version,
 		&i.Coefficients,
@@ -216,15 +224,16 @@ func (q *Queries) GetRatingConfigByID(ctx context.Context, id pgtype.UUID) (Rati
 
 const insertRankingRow = `-- name: InsertRankingRow :one
 INSERT INTO rankings (
-    season, player_id, position, previous_position,
+    club_id, season, player_id, position, previous_position,
     points, rating, singles_points, doubles_points, category, calculated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 )
-RETURNING id, season, player_id, position, previous_position, points, rating, singles_points, doubles_points, category, calculated_at
+RETURNING id, club_id, season, player_id, position, previous_position, points, rating, singles_points, doubles_points, category, calculated_at
 `
 
 type InsertRankingRowParams struct {
+	ClubID           pgtype.UUID
 	Season           int32
 	PlayerID         pgtype.UUID
 	Position         int32
@@ -239,6 +248,7 @@ type InsertRankingRowParams struct {
 
 func (q *Queries) InsertRankingRow(ctx context.Context, arg InsertRankingRowParams) (Ranking, error) {
 	row := q.db.QueryRow(ctx, insertRankingRow,
+		arg.ClubID,
 		arg.Season,
 		arg.PlayerID,
 		arg.Position,
@@ -253,6 +263,7 @@ func (q *Queries) InsertRankingRow(ctx context.Context, arg InsertRankingRowPara
 	var i Ranking
 	err := row.Scan(
 		&i.ID,
+		&i.ClubID,
 		&i.Season,
 		&i.PlayerID,
 		&i.Position,
@@ -331,13 +342,18 @@ func (q *Queries) InsertRatingEvent(ctx context.Context, arg InsertRatingEventPa
 const latestRankingCalculatedAt = `-- name: LatestRankingCalculatedAt :one
 SELECT calculated_at
 FROM rankings
-WHERE rankings.season = $1
+WHERE club_id = $1 AND rankings.season = $2
 ORDER BY calculated_at DESC
 LIMIT 1
 `
 
-func (q *Queries) LatestRankingCalculatedAt(ctx context.Context, season int32) (pgtype.Timestamptz, error) {
-	row := q.db.QueryRow(ctx, latestRankingCalculatedAt, season)
+type LatestRankingCalculatedAtParams struct {
+	ClubID pgtype.UUID
+	Season int32
+}
+
+func (q *Queries) LatestRankingCalculatedAt(ctx context.Context, arg LatestRankingCalculatedAtParams) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, latestRankingCalculatedAt, arg.ClubID, arg.Season)
 	var calculated_at pgtype.Timestamptz
 	err := row.Scan(&calculated_at)
 	return calculated_at, err
@@ -379,27 +395,32 @@ func (q *Queries) ListConfirmedPlayerIDs(ctx context.Context, tournamentID pgtyp
 }
 
 const listLatestRankings = `-- name: ListLatestRankings :many
-SELECT r.id, r.season, r.player_id, r.position, r.previous_position,
+SELECT r.id, r.club_id, r.season, r.player_id, r.position, r.previous_position,
        r.points, r.rating, r.singles_points, r.doubles_points, r.category, r.calculated_at,
        u.first_name, u.last_name, p.slug, p.level, p.player_status, p.avatar_url
 FROM rankings r
 JOIN users u ON u.id = r.player_id
-JOIN profiles p ON p.user_id = r.player_id
-WHERE r.season = $1
+JOIN profiles p ON p.user_id = r.player_id AND p.club_id = r.club_id
+WHERE r.club_id = $1
+  AND r.season = $2
   AND r.calculated_at = (
-      SELECT r2.calculated_at FROM rankings r2 WHERE r2.season = $1 ORDER BY r2.calculated_at DESC LIMIT 1
+      SELECT r2.calculated_at FROM rankings r2
+      WHERE r2.club_id = $1 AND r2.season = $2
+      ORDER BY r2.calculated_at DESC LIMIT 1
   )
-  AND ($2::text IS NULL OR r.category = $2)
+  AND ($3::text IS NULL OR r.category = $3)
 ORDER BY r.position ASC
 `
 
 type ListLatestRankingsParams struct {
+	ClubID   pgtype.UUID
 	Season   int32
 	Category pgtype.Text
 }
 
 type ListLatestRankingsRow struct {
 	ID               pgtype.UUID
+	ClubID           pgtype.UUID
 	Season           int32
 	PlayerID         pgtype.UUID
 	Position         int32
@@ -419,7 +440,7 @@ type ListLatestRankingsRow struct {
 }
 
 func (q *Queries) ListLatestRankings(ctx context.Context, arg ListLatestRankingsParams) ([]ListLatestRankingsRow, error) {
-	rows, err := q.db.Query(ctx, listLatestRankings, arg.Season, arg.Category)
+	rows, err := q.db.Query(ctx, listLatestRankings, arg.ClubID, arg.Season, arg.Category)
 	if err != nil {
 		return nil, err
 	}
@@ -429,6 +450,7 @@ func (q *Queries) ListLatestRankings(ctx context.Context, arg ListLatestRankings
 		var i ListLatestRankingsRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.ClubID,
 			&i.Season,
 			&i.PlayerID,
 			&i.Position,
@@ -457,19 +479,22 @@ func (q *Queries) ListLatestRankings(ctx context.Context, arg ListLatestRankings
 }
 
 const listPreviousPositions = `-- name: ListPreviousPositions :many
-SELECT player_id, position
+SELECT rankings.player_id, rankings.position
 FROM rankings
-WHERE rankings.season = $1
-  AND calculated_at = (
+WHERE rankings.club_id = $1
+  AND rankings.season = $2
+  AND rankings.calculated_at = (
       SELECT r2.calculated_at FROM rankings r2
-      WHERE r2.season = $1
-        AND r2.calculated_at < $2
+      WHERE r2.club_id = $1
+        AND r2.season = $2
+        AND r2.calculated_at < $3
       ORDER BY r2.calculated_at DESC
       LIMIT 1
   )
 `
 
 type ListPreviousPositionsParams struct {
+	ClubID       pgtype.UUID
 	Season       int32
 	CalculatedAt pgtype.Timestamptz
 }
@@ -480,7 +505,7 @@ type ListPreviousPositionsRow struct {
 }
 
 func (q *Queries) ListPreviousPositions(ctx context.Context, arg ListPreviousPositionsParams) ([]ListPreviousPositionsRow, error) {
-	rows, err := q.db.Query(ctx, listPreviousPositions, arg.Season, arg.CalculatedAt)
+	rows, err := q.db.Query(ctx, listPreviousPositions, arg.ClubID, arg.Season, arg.CalculatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -550,12 +575,19 @@ func (q *Queries) ListRatingEventsByPlayer(ctx context.Context, arg ListRatingEv
 }
 
 const listTournamentPointEventsInWindow = `-- name: ListTournamentPointEventsInWindow :many
-SELECT player_id, points_delta, tournament_id, discipline, created_at
-FROM rating_events
-WHERE kind = 'tournament'
-  AND created_at >= $1
-ORDER BY player_id, points_delta DESC
+SELECT e.player_id, e.points_delta, e.tournament_id, e.discipline, e.created_at
+FROM rating_events e
+JOIN tournaments t ON t.id = e.tournament_id
+WHERE e.kind = 'tournament'
+  AND t.club_id = $1
+  AND e.created_at >= $2
+ORDER BY e.player_id, e.points_delta DESC
 `
+
+type ListTournamentPointEventsInWindowParams struct {
+	ClubID    pgtype.UUID
+	CreatedAt pgtype.Timestamptz
+}
 
 type ListTournamentPointEventsInWindowRow struct {
 	PlayerID     pgtype.UUID
@@ -565,8 +597,8 @@ type ListTournamentPointEventsInWindowRow struct {
 	CreatedAt    pgtype.Timestamptz
 }
 
-func (q *Queries) ListTournamentPointEventsInWindow(ctx context.Context, createdAt pgtype.Timestamptz) ([]ListTournamentPointEventsInWindowRow, error) {
-	rows, err := q.db.Query(ctx, listTournamentPointEventsInWindow, createdAt)
+func (q *Queries) ListTournamentPointEventsInWindow(ctx context.Context, arg ListTournamentPointEventsInWindowParams) ([]ListTournamentPointEventsInWindowRow, error) {
+	rows, err := q.db.Query(ctx, listTournamentPointEventsInWindow, arg.ClubID, arg.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -592,7 +624,7 @@ func (q *Queries) ListTournamentPointEventsInWindow(ctx context.Context, created
 }
 
 const lockProfileForUpdate = `-- name: LockProfileForUpdate :one
-SELECT user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
+SELECT user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
        rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
 WHERE user_id = $1
@@ -604,6 +636,7 @@ func (q *Queries) LockProfileForUpdate(ctx context.Context, userID pgtype.UUID) 
 	var i Profile
 	err := row.Scan(
 		&i.UserID,
+		&i.ClubID,
 		&i.Phone,
 		&i.Level,
 		&i.Slug,
@@ -668,7 +701,7 @@ const setProfilePoints = `-- name: SetProfilePoints :one
 UPDATE profiles
 SET points = $2, updated_at = now()
 WHERE user_id = $1
-RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 `
 
 type SetProfilePointsParams struct {
@@ -681,6 +714,7 @@ func (q *Queries) SetProfilePoints(ctx context.Context, arg SetProfilePointsPara
 	var i Profile
 	err := row.Scan(
 		&i.UserID,
+		&i.ClubID,
 		&i.Phone,
 		&i.Level,
 		&i.Slug,
@@ -710,7 +744,7 @@ SET singles_points = $1,
     points = $1::int + $2::int,
     updated_at = now()
 WHERE user_id = $3
-RETURNING user_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 `
 
 type SetProfilePointsBreakdownParams struct {
@@ -724,6 +758,7 @@ func (q *Queries) SetProfilePointsBreakdown(ctx context.Context, arg SetProfileP
 	var i Profile
 	err := row.Scan(
 		&i.UserID,
+		&i.ClubID,
 		&i.Phone,
 		&i.Level,
 		&i.Slug,

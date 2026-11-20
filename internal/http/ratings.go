@@ -120,7 +120,7 @@ func (s *Server) handleListRankings(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePlayerRatingEvents(w http.ResponseWriter, r *http.Request) {
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
-	player, err := s.store.Queries.GetPublicPlayerBySlug(r.Context(), slug)
+	player, err := s.store.Queries.GetPublicPlayerBySlug(r.Context(), sqlc.GetPublicPlayerBySlugParams{ClubID: s.currentClubID(r), Slug: slug})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Игрок не найден")

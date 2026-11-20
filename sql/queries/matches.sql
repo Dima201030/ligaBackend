@@ -206,7 +206,8 @@ SELECT
     t.type AS tournament_type
 FROM matches m
 JOIN tournaments t ON t.id = m.tournament_id
-WHERE m.status <> 'bye'
+WHERE t.club_id = $1
+  AND m.status <> 'bye'
 ORDER BY
     CASE m.status
         WHEN 'live' THEN 0
