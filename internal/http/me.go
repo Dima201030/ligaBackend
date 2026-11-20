@@ -8,19 +8,22 @@ import (
 )
 
 type meProfileJSON struct {
-	Slug          string  `json:"slug"`
-	City          string  `json:"city"`
-	Bio           string  `json:"bio"`
-	AvatarURL     *string `json:"avatar_url,omitempty"`
-	Status        string  `json:"status"`
-	Rating        float64 `json:"rating"`
-	Points        int32   `json:"points"`
-	SinglesPoints int32   `json:"singles_points"`
-	DoublesPoints int32   `json:"doubles_points"`
-	MatchesPlayed int32   `json:"matches_played"`
-	Wins          int32   `json:"wins"`
-	Losses        int32   `json:"losses"`
-	MemberSince   string  `json:"member_since,omitempty"`
+	Slug                 string  `json:"slug"`
+	City                 string  `json:"city"`
+	Bio                  string  `json:"bio"`
+	AvatarURL            *string `json:"avatar_url,omitempty"`
+	Status               string  `json:"status"`
+	BirthDate            *string `json:"birth_date,omitempty"`
+	VerificationStatus   string  `json:"verification_status"`
+	VerifiedAt           *string `json:"verified_at,omitempty"`
+	Rating               float64 `json:"rating"`
+	Points               int32   `json:"points"`
+	SinglesPoints        int32   `json:"singles_points"`
+	DoublesPoints        int32   `json:"doubles_points"`
+	MatchesPlayed        int32   `json:"matches_played"`
+	Wins                 int32   `json:"wins"`
+	Losses               int32   `json:"losses"`
+	MemberSince          string  `json:"member_since,omitempty"`
 }
 
 type meRegistrationJSON struct {
@@ -48,20 +51,27 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"user": sessionUserJSON(user)}
 	prof, err := s.store.Queries.GetProfileByUserID(r.Context(), user.ID)
 	if err == nil {
+		var verifiedAt *string
+		if ts := formatTS(prof.VerifiedAt); ts != "" {
+			verifiedAt = &ts
+		}
 		out["profile"] = meProfileJSON{
-			Slug:          prof.Slug,
-			City:          prof.City,
-			Bio:           prof.Bio,
-			AvatarURL:     textPtr(prof.AvatarUrl),
-			Status:        prof.PlayerStatus,
-			Rating:        round1(prof.Rating),
-			Points:        prof.Points,
-			SinglesPoints: prof.SinglesPoints,
-			DoublesPoints: prof.DoublesPoints,
-			MatchesPlayed: prof.MatchesPlayed,
-			Wins:          prof.Wins,
-			Losses:        prof.Losses,
-			MemberSince:   formatTS(prof.CreatedAt),
+			Slug:               prof.Slug,
+			City:               prof.City,
+			Bio:                prof.Bio,
+			AvatarURL:          textPtr(prof.AvatarUrl),
+			Status:             prof.PlayerStatus,
+			BirthDate:          formatDate(prof.BirthDate),
+			VerificationStatus: string(prof.VerificationStatus),
+			VerifiedAt:         verifiedAt,
+			Rating:             round1(prof.Rating),
+			Points:             prof.Points,
+			SinglesPoints:      prof.SinglesPoints,
+			DoublesPoints:      prof.DoublesPoints,
+			MatchesPlayed:      prof.MatchesPlayed,
+			Wins:               prof.Wins,
+			Losses:             prof.Losses,
+			MemberSince:        formatTS(prof.CreatedAt),
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

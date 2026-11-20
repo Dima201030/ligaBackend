@@ -363,6 +363,49 @@ func (ns NullMatchStatus) Value() (driver.Value, error) {
 	return string(ns.MatchStatus), nil
 }
 
+type ProfileVerificationStatus string
+
+const (
+	ProfileVerificationStatusPending  ProfileVerificationStatus = "pending"
+	ProfileVerificationStatusApproved ProfileVerificationStatus = "approved"
+	ProfileVerificationStatusRejected ProfileVerificationStatus = "rejected"
+)
+
+func (e *ProfileVerificationStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ProfileVerificationStatus(s)
+	case string:
+		*e = ProfileVerificationStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ProfileVerificationStatus: %T", src)
+	}
+	return nil
+}
+
+type NullProfileVerificationStatus struct {
+	ProfileVerificationStatus ProfileVerificationStatus
+	Valid                     bool // Valid is true if ProfileVerificationStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullProfileVerificationStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ProfileVerificationStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ProfileVerificationStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullProfileVerificationStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ProfileVerificationStatus), nil
+}
+
 type RatingEventKind string
 
 const (
@@ -728,6 +771,7 @@ const (
 	VerificationKindEmail  VerificationKind = "email"
 	VerificationKindReset  VerificationKind = "reset"
 	VerificationKindInvite VerificationKind = "invite"
+	VerificationKindSso    VerificationKind = "sso"
 )
 
 func (e *VerificationKind) Scan(src interface{}) error {
@@ -911,26 +955,31 @@ type Page struct {
 }
 
 type Profile struct {
-	UserID        pgtype.UUID
-	ClubID        pgtype.UUID
-	Phone         pgtype.Text
-	Level         string
-	Slug          string
-	Gender        pgtype.Text
-	City          string
-	Bio           string
-	AvatarUrl     pgtype.Text
-	AvatarFileID  pgtype.UUID
-	PlayerStatus  string
-	Rating        float64
-	Points        int32
-	SinglesPoints int32
-	DoublesPoints int32
-	MatchesPlayed int32
-	Wins          int32
-	Losses        int32
-	CreatedAt     pgtype.Timestamptz
-	UpdatedAt     pgtype.Timestamptz
+	UserID             pgtype.UUID
+	ClubID             pgtype.UUID
+	Phone              pgtype.Text
+	Level              string
+	Slug               string
+	Gender             pgtype.Text
+	City               string
+	Bio                string
+	AvatarUrl          pgtype.Text
+	AvatarFileID       pgtype.UUID
+	PlayerStatus       string
+	BirthDate          pgtype.Date
+	VerificationStatus ProfileVerificationStatus
+	VerifiedAt         pgtype.Timestamptz
+	VerifiedBy         pgtype.UUID
+	VerificationNote   pgtype.Text
+	Rating             float64
+	Points             int32
+	SinglesPoints      int32
+	DoublesPoints      int32
+	MatchesPlayed      int32
+	Wins               int32
+	Losses             int32
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
 }
 
 type Ranking struct {

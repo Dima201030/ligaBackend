@@ -207,7 +207,7 @@ SET avatar_file_id = $2,
     avatar_url = $3,
     updated_at = now()
 WHERE user_id = $1
-RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, birth_date, verification_status, verified_at, verified_by, verification_note, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 `
 
 type SetProfileAvatarParams struct {
@@ -231,6 +231,11 @@ func (q *Queries) SetProfileAvatar(ctx context.Context, arg SetProfileAvatarPara
 		&i.AvatarUrl,
 		&i.AvatarFileID,
 		&i.PlayerStatus,
+		&i.BirthDate,
+		&i.VerificationStatus,
+		&i.VerifiedAt,
+		&i.VerifiedBy,
+		&i.VerificationNote,
 		&i.Rating,
 		&i.Points,
 		&i.SinglesPoints,

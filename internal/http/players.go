@@ -14,30 +14,33 @@ import (
 )
 
 type playerJSON struct {
-	ID            string  `json:"id"`
-	Slug          string  `json:"slug"`
-	FirstName     string  `json:"first_name"`
-	LastName      string  `json:"last_name"`
-	Level         string  `json:"level"`
-	Category      string  `json:"category"`
-	Gender        *string `json:"gender,omitempty"`
-	City          string  `json:"city"`
-	Bio           string  `json:"bio"`
-	AvatarURL     *string `json:"avatar_url,omitempty"`
-	Status        string  `json:"status"`
-	Rating         float64 `json:"rating"`
-	Points         int32   `json:"points"`
-	SinglesPoints  int32   `json:"singles_points"`
-	DoublesPoints  int32   `json:"doubles_points"`
-	MatchesPlayed  int32   `json:"matches_played"`
-	Wins           int32   `json:"wins"`
-	Losses         int32   `json:"losses"`
-	Provisional    bool    `json:"provisional"`
-	Email          string  `json:"email,omitempty"`
-	Phone          *string `json:"phone,omitempty"`
-	UserStatus     string  `json:"user_status,omitempty"`
-	Role           string  `json:"role,omitempty"`
-	MemberSince    string  `json:"member_since,omitempty"`
+	ID                   string  `json:"id"`
+	Slug                 string  `json:"slug"`
+	FirstName            string  `json:"first_name"`
+	LastName             string  `json:"last_name"`
+	Level                string  `json:"level"`
+	Category             string  `json:"category"`
+	Gender               *string `json:"gender,omitempty"`
+	City                 string  `json:"city"`
+	Bio                  string  `json:"bio"`
+	AvatarURL            *string `json:"avatar_url,omitempty"`
+	Status               string  `json:"status"`
+	BirthDate            *string `json:"birth_date,omitempty"`
+	VerificationStatus   string  `json:"verification_status,omitempty"`
+	VerifiedAt           *string `json:"verified_at,omitempty"`
+	Rating               float64 `json:"rating"`
+	Points               int32   `json:"points"`
+	SinglesPoints        int32   `json:"singles_points"`
+	DoublesPoints        int32   `json:"doubles_points"`
+	MatchesPlayed        int32   `json:"matches_played"`
+	Wins                 int32   `json:"wins"`
+	Losses               int32   `json:"losses"`
+	Provisional          bool    `json:"provisional"`
+	Email                string  `json:"email,omitempty"`
+	Phone                *string `json:"phone,omitempty"`
+	UserStatus           string  `json:"user_status,omitempty"`
+	Role                 string  `json:"role,omitempty"`
+	MemberSince          string  `json:"member_since,omitempty"`
 }
 
 func (s *Server) handleListPublicPlayers(w http.ResponseWriter, r *http.Request) {
@@ -225,28 +228,35 @@ func publicPlayerDetail(row sqlc.GetPublicPlayerBySlugRow) playerJSON {
 }
 
 func organizerPlayerFromRow(row sqlc.ListOrganizerPlayersRow) playerJSON {
+	var verifiedAt *string
+	if ts := formatTS(row.VerifiedAt); ts != "" {
+		verifiedAt = &ts
+	}
 	return playerJSON{
-		ID:            uuidString(row.ID),
-		Slug:          row.Slug,
-		FirstName:     row.FirstName,
-		LastName:      row.LastName,
-		Level:         row.Level,
-		Category:      row.Level,
-		Gender:        textPtr(row.Gender),
-		City:          row.City,
-		Bio:           row.Bio,
-		AvatarURL:     textPtr(row.AvatarUrl),
-		Status:        row.PlayerStatus,
-		Rating:        round1(row.Rating),
-		Points:        row.Points,
-		SinglesPoints: row.SinglesPoints,
-		DoublesPoints: row.DoublesPoints,
-		MatchesPlayed: row.MatchesPlayed,
-		Wins:          row.Wins,
-		Losses:        row.Losses,
-		Provisional:   row.MatchesPlayed < 10,
-		Email:         row.Email,
-		Phone:         textPtr(row.Phone),
+		ID:                 uuidString(row.ID),
+		Slug:               row.Slug,
+		FirstName:          row.FirstName,
+		LastName:           row.LastName,
+		Level:              row.Level,
+		Category:           row.Level,
+		Gender:             textPtr(row.Gender),
+		City:               row.City,
+		Bio:                row.Bio,
+		AvatarURL:          textPtr(row.AvatarUrl),
+		Status:             row.PlayerStatus,
+		BirthDate:          formatDate(row.BirthDate),
+		VerificationStatus: string(row.VerificationStatus),
+		VerifiedAt:         verifiedAt,
+		Rating:             round1(row.Rating),
+		Points:             row.Points,
+		SinglesPoints:      row.SinglesPoints,
+		DoublesPoints:      row.DoublesPoints,
+		MatchesPlayed:      row.MatchesPlayed,
+		Wins:               row.Wins,
+		Losses:             row.Losses,
+		Provisional:        row.MatchesPlayed < 10,
+		Email:              row.Email,
+		Phone:              textPtr(row.Phone),
 		UserStatus:    string(row.UserStatus),
 		Role:          string(row.Role),
 		MemberSince:   formatTS(row.CreatedAt),

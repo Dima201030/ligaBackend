@@ -71,6 +71,8 @@ CREATE INDEX sessions_user_id_idx ON sessions (user_id);
 CREATE INDEX sessions_active_idx ON sessions (expires_at)
     WHERE revoked_at IS NULL;
 
+CREATE TYPE profile_verification_status AS ENUM ('pending', 'approved', 'rejected');
+
 CREATE TABLE profiles (
     user_id         UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
     club_id         UUID NOT NULL REFERENCES clubs (id),
@@ -83,6 +85,11 @@ CREATE TABLE profiles (
     avatar_url      TEXT,
     avatar_file_id  UUID,
     player_status   TEXT NOT NULL DEFAULT 'active',
+    birth_date      DATE,
+    verification_status profile_verification_status NOT NULL DEFAULT 'pending',
+    verified_at     TIMESTAMPTZ,
+    verified_by     UUID REFERENCES users (id) ON DELETE SET NULL,
+    verification_note TEXT,
     rating          DOUBLE PRECISION NOT NULL DEFAULT 1200,
     points          INT NOT NULL DEFAULT 0,
     singles_points  INT NOT NULL DEFAULT 0,
@@ -112,8 +119,9 @@ CREATE INDEX profiles_rating_idx ON profiles (rating DESC);
 CREATE INDEX profiles_points_idx ON profiles (points DESC);
 CREATE INDEX profiles_level_idx ON profiles (level);
 CREATE INDEX profiles_player_status_idx ON profiles (player_status);
+CREATE INDEX profiles_verification_status_idx ON profiles (verification_status);
 
-CREATE TYPE verification_kind AS ENUM ('email', 'reset', 'invite');
+CREATE TYPE verification_kind AS ENUM ('email', 'reset', 'invite', 'sso');
 
 CREATE TABLE verification_tokens (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

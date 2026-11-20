@@ -11,6 +11,77 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const confirmProfileVerification = `-- name: ConfirmProfileVerification :one
+UPDATE profiles
+SET phone = COALESCE($1, phone),
+    level = COALESCE($2, level),
+    birth_date = COALESCE($3, birth_date),
+    verification_status = $4,
+    verified_at = CASE
+        WHEN $4::profile_verification_status = 'approved' THEN now()
+        ELSE NULL
+    END,
+    verified_by = CASE
+        WHEN $4::profile_verification_status = 'approved' THEN $5
+        ELSE NULL
+    END,
+    verification_note = COALESCE($6, verification_note),
+    updated_at = now()
+WHERE user_id = $7
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, birth_date, verification_status, verified_at, verified_by, verification_note, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+`
+
+type ConfirmProfileVerificationParams struct {
+	Phone              pgtype.Text
+	Level              pgtype.Text
+	BirthDate          pgtype.Date
+	VerificationStatus ProfileVerificationStatus
+	VerifiedBy         pgtype.UUID
+	VerificationNote   pgtype.Text
+	UserID             pgtype.UUID
+}
+
+func (q *Queries) ConfirmProfileVerification(ctx context.Context, arg ConfirmProfileVerificationParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, confirmProfileVerification,
+		arg.Phone,
+		arg.Level,
+		arg.BirthDate,
+		arg.VerificationStatus,
+		arg.VerifiedBy,
+		arg.VerificationNote,
+		arg.UserID,
+	)
+	var i Profile
+	err := row.Scan(
+		&i.UserID,
+		&i.ClubID,
+		&i.Phone,
+		&i.Level,
+		&i.Slug,
+		&i.Gender,
+		&i.City,
+		&i.Bio,
+		&i.AvatarUrl,
+		&i.AvatarFileID,
+		&i.PlayerStatus,
+		&i.BirthDate,
+		&i.VerificationStatus,
+		&i.VerifiedAt,
+		&i.VerifiedBy,
+		&i.VerificationNote,
+		&i.Rating,
+		&i.Points,
+		&i.SinglesPoints,
+		&i.DoublesPoints,
+		&i.MatchesPlayed,
+		&i.Wins,
+		&i.Losses,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createProfile = `-- name: CreateProfile :one
 INSERT INTO profiles (
     user_id, club_id, phone, level, slug, gender, city, bio, avatar_url,
@@ -19,7 +90,7 @@ INSERT INTO profiles (
     $1, $2, $3, $4, $5, $6, $7, $8, $9,
     $10, $11, $12, $13, $14, $15, $16, $17
 )
-RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, birth_date, verification_status, verified_at, verified_by, verification_note, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 `
 
 type CreateProfileParams struct {
@@ -75,6 +146,11 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 		&i.AvatarUrl,
 		&i.AvatarFileID,
 		&i.PlayerStatus,
+		&i.BirthDate,
+		&i.VerificationStatus,
+		&i.VerifiedAt,
+		&i.VerifiedBy,
+		&i.VerificationNote,
 		&i.Rating,
 		&i.Points,
 		&i.SinglesPoints,
@@ -90,6 +166,7 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 
 const getProfileBySlug = `-- name: GetProfileBySlug :one
 SELECT user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
+       birth_date, verification_status, verified_at, verified_by, verification_note,
        rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
 WHERE club_id = $1 AND slug = $2
@@ -115,6 +192,11 @@ func (q *Queries) GetProfileBySlug(ctx context.Context, arg GetProfileBySlugPara
 		&i.AvatarUrl,
 		&i.AvatarFileID,
 		&i.PlayerStatus,
+		&i.BirthDate,
+		&i.VerificationStatus,
+		&i.VerifiedAt,
+		&i.VerifiedBy,
+		&i.VerificationNote,
 		&i.Rating,
 		&i.Points,
 		&i.SinglesPoints,
@@ -130,6 +212,7 @@ func (q *Queries) GetProfileBySlug(ctx context.Context, arg GetProfileBySlugPara
 
 const getProfileByUserID = `-- name: GetProfileByUserID :one
 SELECT user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
+       birth_date, verification_status, verified_at, verified_by, verification_note,
        rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 FROM profiles
 WHERE user_id = $1
@@ -150,6 +233,11 @@ func (q *Queries) GetProfileByUserID(ctx context.Context, userID pgtype.UUID) (P
 		&i.AvatarUrl,
 		&i.AvatarFileID,
 		&i.PlayerStatus,
+		&i.BirthDate,
+		&i.VerificationStatus,
+		&i.VerifiedAt,
+		&i.VerifiedBy,
+		&i.VerificationNote,
 		&i.Rating,
 		&i.Points,
 		&i.SinglesPoints,
@@ -264,6 +352,9 @@ SELECT
     p.bio,
     p.avatar_url,
     p.player_status,
+    p.birth_date,
+    p.verification_status,
+    p.verified_at,
     p.rating,
     p.points,
     p.singles_points,
@@ -292,29 +383,32 @@ type ListOrganizerPlayersParams struct {
 }
 
 type ListOrganizerPlayersRow struct {
-	ID            pgtype.UUID
-	Email         string
-	FirstName     string
-	LastName      string
-	Role          UserRole
-	UserStatus    UserStatus
-	Slug          string
-	Level         string
-	Gender        pgtype.Text
-	City          string
-	Bio           string
-	AvatarUrl     pgtype.Text
-	PlayerStatus  string
-	Rating        float64
-	Points        int32
-	SinglesPoints int32
-	DoublesPoints int32
-	MatchesPlayed int32
-	Wins          int32
-	Losses        int32
-	Phone         pgtype.Text
-	CreatedAt     pgtype.Timestamptz
-	UpdatedAt     pgtype.Timestamptz
+	ID                 pgtype.UUID
+	Email              string
+	FirstName          string
+	LastName           string
+	Role               UserRole
+	UserStatus         UserStatus
+	Slug               string
+	Level              string
+	Gender             pgtype.Text
+	City               string
+	Bio                string
+	AvatarUrl          pgtype.Text
+	PlayerStatus       string
+	BirthDate          pgtype.Date
+	VerificationStatus ProfileVerificationStatus
+	VerifiedAt         pgtype.Timestamptz
+	Rating             float64
+	Points             int32
+	SinglesPoints      int32
+	DoublesPoints      int32
+	MatchesPlayed      int32
+	Wins               int32
+	Losses             int32
+	Phone              pgtype.Text
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
 }
 
 func (q *Queries) ListOrganizerPlayers(ctx context.Context, arg ListOrganizerPlayersParams) ([]ListOrganizerPlayersRow, error) {
@@ -346,6 +440,9 @@ func (q *Queries) ListOrganizerPlayers(ctx context.Context, arg ListOrganizerPla
 			&i.Bio,
 			&i.AvatarUrl,
 			&i.PlayerStatus,
+			&i.BirthDate,
+			&i.VerificationStatus,
+			&i.VerifiedAt,
 			&i.Rating,
 			&i.Points,
 			&i.SinglesPoints,
@@ -509,7 +606,7 @@ SET gender = COALESCE($1, gender),
     level = COALESCE($6, level),
     updated_at = now()
 WHERE user_id = $7
-RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, birth_date, verification_status, verified_at, verified_by, verification_note, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
 `
 
 type UpdateProfilePublicParams struct {
@@ -545,6 +642,11 @@ func (q *Queries) UpdateProfilePublic(ctx context.Context, arg UpdateProfilePubl
 		&i.AvatarUrl,
 		&i.AvatarFileID,
 		&i.PlayerStatus,
+		&i.BirthDate,
+		&i.VerificationStatus,
+		&i.VerifiedAt,
+		&i.VerifiedBy,
+		&i.VerificationNote,
 		&i.Rating,
 		&i.Points,
 		&i.SinglesPoints,

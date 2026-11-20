@@ -560,8 +560,14 @@ func (s *Server) handleCreateRegistration(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
 		return
 	}
+	// Defense in depth: middleware already enforces session + user approved + profile verified.
 	if user.Status != sqlc.UserStatusApproved {
 		writeError(w, http.StatusForbidden, "forbidden", "Заявка доступна только подтверждённым игрокам")
+		return
+	}
+	prof, err := s.store.Queries.GetProfileByUserID(r.Context(), user.ID)
+	if err != nil || !profileAllowsTournamentRegistration(prof.VerificationStatus) {
+		writeError(w, http.StatusForbidden, "profile_unverified", "Регистрация доступна только после подтверждения профиля организатором")
 		return
 	}
 
