@@ -7,7 +7,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api \
- && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/seed ./cmd/seed
+ && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/seed ./cmd/seed \
+ && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/mailworker ./cmd/mailworker \
+ && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/rankingsnapshot ./cmd/rankingsnapshot
 
 FROM alpine:3.21 AS migrate
 ARG TARGETARCH
@@ -27,12 +29,18 @@ WORKDIR /migrations
 ENTRYPOINT ["goose", "-dir", "/migrations", "postgres"]
 
 FROM alpine:3.21
-# BusyBox wget is enough for the healthcheck; avoid apk (needs network mirrors).
-RUN adduser -D -H -u 10001 app
+# tzdata for RANKING_SNAPSHOT_TZ; BusyBox wget covers healthcheck.
+RUN apk add --no-cache tzdata \
+ && adduser -D -H -u 10001 app \
+ && mkdir -p /data/uploads \
+ && chown -R app:app /data
 WORKDIR /app
 COPY --from=build /out/api /app/api
 COPY --from=build /out/seed /app/seed
+COPY --from=build /out/mailworker /app/mailworker
+COPY --from=build /out/rankingsnapshot /app/rankingsnapshot
 COPY migrations /app/migrations
+ENV UPLOADS_DIR=/data/uploads
 USER app
 EXPOSE 8080
 ENTRYPOINT ["/app/api"]

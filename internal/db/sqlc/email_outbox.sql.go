@@ -7,7 +7,79 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const claimPendingEmails = `-- name: ClaimPendingEmails :many
+WITH due AS (
+    SELECT o.id AS due_id
+    FROM email_outbox AS o
+    WHERE o.status = 'pending'
+      AND o.next_attempt_at <= now()
+      AND o.attempts < $1
+    ORDER BY o.next_attempt_at ASC
+    LIMIT $2
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE email_outbox AS e
+SET
+    attempts = e.attempts + 1,
+    error = NULL,
+    next_attempt_at = now() + ((GREATEST(e.attempts + 1, 1))::text || ' minutes')::interval
+FROM due
+WHERE e.id = due.due_id
+RETURNING e.id, e."to", e.template, e.payload, e.status, e.attempts, e.next_attempt_at, e.sent_at, e.error, e.created_at
+`
+
+type ClaimPendingEmailsParams struct {
+	Attempts int32
+	Limit    int32
+}
+
+func (q *Queries) ClaimPendingEmails(ctx context.Context, arg ClaimPendingEmailsParams) ([]EmailOutbox, error) {
+	rows, err := q.db.Query(ctx, claimPendingEmails, arg.Attempts, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []EmailOutbox{}
+	for rows.Next() {
+		var i EmailOutbox
+		if err := rows.Scan(
+			&i.ID,
+			&i.To,
+			&i.Template,
+			&i.Payload,
+			&i.Status,
+			&i.Attempts,
+			&i.NextAttemptAt,
+			&i.SentAt,
+			&i.Error,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const countOutboxByStatus = `-- name: CountOutboxByStatus :one
+SELECT COUNT(*)::int AS count
+FROM email_outbox
+WHERE status = $1
+`
+
+func (q *Queries) CountOutboxByStatus(ctx context.Context, status EmailOutboxStatus) (int32, error) {
+	row := q.db.QueryRow(ctx, countOutboxByStatus, status)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
 
 const enqueueEmail = `-- name: EnqueueEmail :one
 INSERT INTO email_outbox ("to", template, payload)
@@ -23,6 +95,70 @@ type EnqueueEmailParams struct {
 
 func (q *Queries) EnqueueEmail(ctx context.Context, arg EnqueueEmailParams) (EmailOutbox, error) {
 	row := q.db.QueryRow(ctx, enqueueEmail, arg.To, arg.Template, arg.Payload)
+	var i EmailOutbox
+	err := row.Scan(
+		&i.ID,
+		&i.To,
+		&i.Template,
+		&i.Payload,
+		&i.Status,
+		&i.Attempts,
+		&i.NextAttemptAt,
+		&i.SentAt,
+		&i.Error,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const markEmailFailed = `-- name: MarkEmailFailed :one
+UPDATE email_outbox
+SET status = CASE
+        WHEN attempts >= $2 THEN 'failed'::email_outbox_status
+        ELSE 'pending'::email_outbox_status
+    END,
+    error = $3,
+    next_attempt_at = now() + ((LEAST(attempts * 2, 60))::text || ' minutes')::interval
+WHERE id = $1
+RETURNING id, "to", template, payload, status, attempts, next_attempt_at, sent_at, error, created_at
+`
+
+type MarkEmailFailedParams struct {
+	ID       pgtype.UUID
+	Attempts int32
+	Error    pgtype.Text
+}
+
+func (q *Queries) MarkEmailFailed(ctx context.Context, arg MarkEmailFailedParams) (EmailOutbox, error) {
+	row := q.db.QueryRow(ctx, markEmailFailed, arg.ID, arg.Attempts, arg.Error)
+	var i EmailOutbox
+	err := row.Scan(
+		&i.ID,
+		&i.To,
+		&i.Template,
+		&i.Payload,
+		&i.Status,
+		&i.Attempts,
+		&i.NextAttemptAt,
+		&i.SentAt,
+		&i.Error,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const markEmailSent = `-- name: MarkEmailSent :one
+UPDATE email_outbox
+SET status = 'sent',
+    sent_at = now(),
+    error = NULL,
+    next_attempt_at = now()
+WHERE id = $1
+RETURNING id, "to", template, payload, status, attempts, next_attempt_at, sent_at, error, created_at
+`
+
+func (q *Queries) MarkEmailSent(ctx context.Context, id pgtype.UUID) (EmailOutbox, error) {
+	row := q.db.QueryRow(ctx, markEmailSent, id)
 	var i EmailOutbox
 	err := row.Scan(
 		&i.ID,
