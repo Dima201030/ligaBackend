@@ -176,6 +176,51 @@ func (q *Queries) GetClubMembership(ctx context.Context, arg GetClubMembershipPa
 	return i, err
 }
 
+const getClubMembershipByID = `-- name: GetClubMembershipByID :one
+SELECT m.id, m.club_id, m.user_id, m.role, m.status, m.created_at, m.updated_at, u.email, u.first_name, u.last_name, u.status AS user_status
+FROM club_memberships m
+JOIN users u ON u.id = m.user_id
+WHERE m.id = $1 AND m.club_id = $2
+`
+
+type GetClubMembershipByIDParams struct {
+	ID     pgtype.UUID
+	ClubID pgtype.UUID
+}
+
+type GetClubMembershipByIDRow struct {
+	ID         pgtype.UUID
+	ClubID     pgtype.UUID
+	UserID     pgtype.UUID
+	Role       ClubMemberRole
+	Status     ClubMemberStatus
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+	Email      string
+	FirstName  string
+	LastName   string
+	UserStatus UserStatus
+}
+
+func (q *Queries) GetClubMembershipByID(ctx context.Context, arg GetClubMembershipByIDParams) (GetClubMembershipByIDRow, error) {
+	row := q.db.QueryRow(ctx, getClubMembershipByID, arg.ID, arg.ClubID)
+	var i GetClubMembershipByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.ClubID,
+		&i.UserID,
+		&i.Role,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Email,
+		&i.FirstName,
+		&i.LastName,
+		&i.UserStatus,
+	)
+	return i, err
+}
+
 const listActiveClubs = `-- name: ListActiveClubs :many
 SELECT id, slug, name, city, status, settings, created_at, updated_at FROM clubs
 WHERE status = 'active'
@@ -401,6 +446,42 @@ func (q *Queries) UpdateClub(ctx context.Context, arg UpdateClubParams) (Club, e
 		&i.City,
 		&i.Status,
 		&i.Settings,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateClubMembership = `-- name: UpdateClubMembership :one
+UPDATE club_memberships
+SET role = $3,
+    status = $4,
+    updated_at = now()
+WHERE club_id = $1 AND user_id = $2
+RETURNING id, club_id, user_id, role, status, created_at, updated_at
+`
+
+type UpdateClubMembershipParams struct {
+	ClubID pgtype.UUID
+	UserID pgtype.UUID
+	Role   ClubMemberRole
+	Status ClubMemberStatus
+}
+
+func (q *Queries) UpdateClubMembership(ctx context.Context, arg UpdateClubMembershipParams) (ClubMembership, error) {
+	row := q.db.QueryRow(ctx, updateClubMembership,
+		arg.ClubID,
+		arg.UserID,
+		arg.Role,
+		arg.Status,
+	)
+	var i ClubMembership
+	err := row.Scan(
+		&i.ID,
+		&i.ClubID,
+		&i.UserID,
+		&i.Role,
+		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
