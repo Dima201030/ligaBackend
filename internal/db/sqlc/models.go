@@ -911,26 +911,27 @@ type Page struct {
 }
 
 type Profile struct {
-	UserID        pgtype.UUID
-	ClubID        pgtype.UUID
-	Phone         pgtype.Text
-	Level         string
-	Slug          string
-	Gender        pgtype.Text
-	City          string
-	Bio           string
-	AvatarUrl     pgtype.Text
-	AvatarFileID  pgtype.UUID
-	PlayerStatus  string
-	Rating        float64
-	Points        int32
-	SinglesPoints int32
-	DoublesPoints int32
-	MatchesPlayed int32
-	Wins          int32
-	Losses        int32
-	CreatedAt     pgtype.Timestamptz
-	UpdatedAt     pgtype.Timestamptz
+	UserID            pgtype.UUID
+	ClubID            pgtype.UUID
+	Phone             pgtype.Text
+	Level             string
+	Slug              string
+	Gender            pgtype.Text
+	City              string
+	Bio               string
+	AvatarUrl         pgtype.Text
+	AvatarFileID      pgtype.UUID
+	PlayerStatus      string
+	Rating            float64
+	Points            int32
+	SinglesPoints     int32
+	DoublesPoints     int32
+	MatchesPlayed     int32
+	Wins              int32
+	Losses            int32
+	NotificationPrefs []byte
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
 }
 
 type Ranking struct {
