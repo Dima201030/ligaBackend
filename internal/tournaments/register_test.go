@@ -149,10 +149,11 @@ func TestUpdateRegistrationStatus_ConfirmRejectAndDemote(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
 	suffix := time.Now().UnixNano()
-	tour := createOpenTournament(t, store, "status-test-"+itoa(suffix), 1)
+	tour := createOpenTournament(t, store, "status-test-"+itoa(suffix), 2)
 
 	p1 := createApprovedPlayer(t, store, "st1-"+itoa(suffix)+"@example.com")
 	p2 := createApprovedPlayer(t, store, "st2-"+itoa(suffix)+"@example.com")
+	p3 := createApprovedPlayer(t, store, "st3-"+itoa(suffix)+"@example.com")
 
 	r1, err := tournaments.CreateRegistration(ctx, store, tournaments.CreateRegistrationInput{
 		TournamentID: tour.ID, PlayerID: p1,
@@ -163,23 +164,28 @@ func TestUpdateRegistrationStatus_ConfirmRejectAndDemote(t *testing.T) {
 	r2, err := tournaments.CreateRegistration(ctx, store, tournaments.CreateRegistrationInput{
 		TournamentID: tour.ID, PlayerID: p2,
 	})
-	if err != nil || r2.Status != sqlc.RegistrationStatusWaitlist {
-		t.Fatalf("r2 waitlist: status=%s err=%v", r2.Status, err)
+	if err != nil || r2.Status != sqlc.RegistrationStatusConfirmed {
+		t.Fatalf("r2 confirmed: status=%s err=%v", r2.Status, err)
+	}
+	r3, err := tournaments.CreateRegistration(ctx, store, tournaments.CreateRegistrationInput{
+		TournamentID: tour.ID, PlayerID: p3,
+	})
+	if err != nil || r3.Status != sqlc.RegistrationStatusWaitlist {
+		t.Fatalf("r3 waitlist: status=%s err=%v", r3.Status, err)
 	}
 
-	rejected, err := tournaments.UpdateRegistrationStatus(ctx, store, tour.ID, r1.ID, "rejected")
+	rejected, promotedOnReject, err := tournaments.UpdateRegistrationStatus(ctx, store, tour.ID, r1.ID, "rejected")
 	if err != nil || rejected.Status != sqlc.RegistrationStatusRejected {
 		t.Fatalf("reject: status=%s err=%v", rejected.Status, err)
 	}
-	promoted, err := store.Queries.GetRegistrationByID(ctx, r2.ID)
-	if err != nil {
-		t.Fatal(err)
+	if promotedOnReject == nil || promotedOnReject.Status != sqlc.RegistrationStatusConfirmed {
+		t.Fatalf("expected waitlist promote after reject, got %+v", promotedOnReject)
 	}
-	if promoted.Status != sqlc.RegistrationStatusConfirmed {
-		t.Fatalf("expected waitlist promote after reject, got %s", promoted.Status)
+	if promotedOnReject.ID.Bytes != r3.ID.Bytes {
+		t.Fatalf("promoted id mismatch")
 	}
 
-	demoted, err := tournaments.UpdateRegistrationStatus(ctx, store, tour.ID, promoted.ID, "waitlist")
+	demoted, _, err := tournaments.UpdateRegistrationStatus(ctx, store, tour.ID, promotedOnReject.ID, "waitlist")
 	if err != nil || demoted.Status != sqlc.RegistrationStatusWaitlist {
 		t.Fatalf("demote: status=%s err=%v", demoted.Status, err)
 	}
@@ -191,12 +197,12 @@ func TestUpdateRegistrationStatus_ConfirmRejectAndDemote(t *testing.T) {
 		t.Fatalf("demote must not self-promote, got %s", still.Status)
 	}
 
-	restored, err := tournaments.UpdateRegistrationStatus(ctx, store, tour.ID, rejected.ID, "confirmed")
+	restored, _, err := tournaments.UpdateRegistrationStatus(ctx, store, tour.ID, rejected.ID, "confirmed")
 	if err != nil || restored.Status != sqlc.RegistrationStatusConfirmed {
 		t.Fatalf("restore confirmed: status=%s err=%v", restored.Status, err)
 	}
 
-	_, err = tournaments.UpdateRegistrationStatus(ctx, store, tour.ID, demoted.ID, "confirmed")
+	_, _, err = tournaments.UpdateRegistrationStatus(ctx, store, tour.ID, demoted.ID, "confirmed")
 	if !errors.Is(err, tournaments.ErrCapacityFull) {
 		t.Fatalf("expected capacity_full, got %v", err)
 	}

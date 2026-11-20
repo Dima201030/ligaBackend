@@ -240,20 +240,21 @@ func CancelRegistration(ctx context.Context, store *db.Store, tournamentID, play
 // UpdateRegistrationStatus lets an organizer move a registration between statuses.
 // Capacity is enforced when entering confirmed/pending from a non-occupying status.
 // Freeing an occupying seat promotes the oldest waitlist entry (same as cancel).
+// promoted is set when a waitlisted player is auto-confirmed into a freed seat.
 func UpdateRegistrationStatus(
 	ctx context.Context,
 	store *db.Store,
 	tournamentID, registrationID pgtype.UUID,
 	newStatusRaw string,
-) (sqlc.Registration, error) {
+) (reg sqlc.Registration, promoted *sqlc.Registration, err error) {
 	newStatus, ok := parseRegistrationStatus(newStatusRaw)
 	if !ok {
-		return sqlc.Registration{}, ErrInvalidStatus
+		return sqlc.Registration{}, nil, ErrInvalidStatus
 	}
 
 	tx, err := store.Pool.Begin(ctx)
 	if err != nil {
-		return sqlc.Registration{}, err
+		return sqlc.Registration{}, nil, err
 	}
 	defer tx.Rollback(ctx)
 	q := store.Queries.WithTx(tx)
@@ -261,26 +262,26 @@ func UpdateRegistrationStatus(
 	tour, err := q.LockTournamentByID(ctx, tournamentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return sqlc.Registration{}, ErrTournamentNotFound
+			return sqlc.Registration{}, nil, ErrTournamentNotFound
 		}
-		return sqlc.Registration{}, err
+		return sqlc.Registration{}, nil, err
 	}
 
 	before, err := q.LockRegistrationByID(ctx, registrationID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return sqlc.Registration{}, ErrNotRegistered
+			return sqlc.Registration{}, nil, ErrNotRegistered
 		}
-		return sqlc.Registration{}, err
+		return sqlc.Registration{}, nil, err
 	}
 	if !uuidEqual(before.TournamentID, tournamentID) {
-		return sqlc.Registration{}, ErrRegistrationMismatch
+		return sqlc.Registration{}, nil, ErrRegistrationMismatch
 	}
 	if before.Status == newStatus {
 		if err := tx.Commit(ctx); err != nil {
-			return sqlc.Registration{}, err
+			return sqlc.Registration{}, nil, err
 		}
-		return before, nil
+		return before, nil, nil
 	}
 
 	wasOccupying := isOccupyingStatus(before.Status)
@@ -289,10 +290,10 @@ func UpdateRegistrationStatus(
 	if willOccupy && !wasOccupying {
 		occupied, err := q.CountOccupyingRegistrations(ctx, tournamentID)
 		if err != nil {
-			return sqlc.Registration{}, err
+			return sqlc.Registration{}, nil, err
 		}
 		if occupied >= tour.MaxParticipants {
-			return sqlc.Registration{}, ErrCapacityFull
+			return sqlc.Registration{}, nil, ErrCapacityFull
 		}
 	}
 
@@ -303,25 +304,25 @@ func UpdateRegistrationStatus(
 		} else {
 			next, err := q.NextWaitlistPosition(ctx, tournamentID)
 			if err != nil {
-				return sqlc.Registration{}, err
+				return sqlc.Registration{}, nil, err
 			}
 			waitlistPos = pgtype.Int4{Int32: next, Valid: true}
 		}
 	}
 
-	reg, err := q.SetRegistrationStatus(ctx, sqlc.SetRegistrationStatusParams{
+	reg, err = q.SetRegistrationStatus(ctx, sqlc.SetRegistrationStatusParams{
 		ID:               registrationID,
 		Status:           newStatus,
 		WaitlistPosition: waitlistPos,
 	})
 	if err != nil {
-		return sqlc.Registration{}, err
+		return sqlc.Registration{}, nil, err
 	}
 
 	if wasOccupying && !willOccupy {
 		occupied, err := q.CountOccupyingRegistrations(ctx, tournamentID)
 		if err != nil {
-			return sqlc.Registration{}, err
+			return sqlc.Registration{}, nil, err
 		}
 		if occupied < tour.MaxParticipants {
 			// Skip the row we just moved (e.g. confirmed → waitlist) so we don't
@@ -331,19 +332,21 @@ func UpdateRegistrationStatus(
 				ID:           registrationID,
 			})
 			if err == nil {
-				if _, err := q.PromoteRegistration(ctx, wait.ID); err != nil {
-					return sqlc.Registration{}, err
+				promotedReg, err := q.PromoteRegistration(ctx, wait.ID)
+				if err != nil {
+					return sqlc.Registration{}, nil, err
 				}
+				promoted = &promotedReg
 			} else if !errors.Is(err, pgx.ErrNoRows) {
-				return sqlc.Registration{}, err
+				return sqlc.Registration{}, nil, err
 			}
 		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return sqlc.Registration{}, err
+		return sqlc.Registration{}, nil, err
 	}
-	return reg, nil
+	return reg, promoted, nil
 }
 
 func uuidEqual(a, b pgtype.UUID) bool {
