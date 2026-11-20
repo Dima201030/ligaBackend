@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Dima201030/ligaBackend/internal/auth"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -75,7 +76,63 @@ func parseClubMemberRole(raw string) (sqlc.ClubMemberRole, bool) {
 	}
 }
 
+func clubRoleRank(role sqlc.ClubMemberRole) int {
+	switch role {
+	case sqlc.ClubMemberRoleOwner:
+		return 3
+	case sqlc.ClubMemberRoleOrganizer:
+		return 2
+	case sqlc.ClubMemberRolePlayer:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// actorClubMembershipRole returns the caller's membership role in the current club.
+// Global owner/superadmin is treated as club owner when they have no membership row.
+func (s *Server) actorClubMembershipRole(r *http.Request) (sqlc.ClubMemberRole, error) {
+	actor := auth.UserFromContext(r.Context())
+	if actor == nil {
+		return "", errUnauthorized
+	}
+	row, err := s.store.Queries.GetClubMembership(r.Context(), sqlc.GetClubMembershipParams{
+		ClubID: s.currentClubID(r),
+		UserID: actor.ID,
+	})
+	if err == nil && row.Status == sqlc.ClubMemberStatusActive {
+		return row.Role, nil
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", err
+	}
+	// Global owner/superadmin may manage any club even without a membership row.
+	switch actor.Role {
+	case sqlc.UserRoleOwner, sqlc.UserRoleSuperadmin:
+		return sqlc.ClubMemberRoleOwner, nil
+	default:
+		return "", errForbiddenClub
+	}
+}
+
+var (
+	errUnauthorized  = errors.New("unauthorized")
+	errForbiddenClub = errors.New("forbidden club")
+)
+
 func (s *Server) handleListClubMembers(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.actorClubMembershipRole(r); err != nil {
+		if errors.Is(err, errUnauthorized) {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
+			return
+		}
+		if errors.Is(err, errForbiddenClub) {
+			writeError(w, http.StatusForbidden, "forbidden", "Нужна роль organizer или owner в этом клубе")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось проверить права")
+		return
+	}
 	limit := int32(100)
 	offset := int32(0)
 	if v := r.URL.Query().Get("limit"); v != "" {
@@ -117,6 +174,19 @@ type addClubMemberRequest struct {
 }
 
 func (s *Server) handleAddClubMember(w http.ResponseWriter, r *http.Request) {
+	actorRole, err := s.actorClubMembershipRole(r)
+	if err != nil {
+		if errors.Is(err, errUnauthorized) {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
+			return
+		}
+		if errors.Is(err, errForbiddenClub) {
+			writeError(w, http.StatusForbidden, "forbidden", "Нужна роль organizer или owner в этом клубе")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось проверить права")
+		return
+	}
 	var req addClubMemberRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Некорректное тело запроса")
@@ -130,6 +200,14 @@ func (s *Server) handleAddClubMember(w http.ResponseWriter, r *http.Request) {
 	role, ok := parseClubMemberRole(req.Role)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "validation", "Роль: owner, organizer или player")
+		return
+	}
+	if role == sqlc.ClubMemberRoleOwner && actorRole != sqlc.ClubMemberRoleOwner {
+		writeError(w, http.StatusForbidden, "forbidden", "Назначить owner может только owner клуба")
+		return
+	}
+	if clubRoleRank(role) > clubRoleRank(actorRole) {
+		writeError(w, http.StatusForbidden, "forbidden", "Нельзя назначить роль выше своей")
 		return
 	}
 	status := sqlc.ClubMemberStatusActive
@@ -214,6 +292,19 @@ type patchClubMemberRequest struct {
 }
 
 func (s *Server) handlePatchClubMember(w http.ResponseWriter, r *http.Request) {
+	actorRole, err := s.actorClubMembershipRole(r)
+	if err != nil {
+		if errors.Is(err, errUnauthorized) {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
+			return
+		}
+		if errors.Is(err, errForbiddenClub) {
+			writeError(w, http.StatusForbidden, "forbidden", "Нужна роль organizer или owner в этом клубе")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось проверить права")
+		return
+	}
 	id, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор")
@@ -262,6 +353,15 @@ func (s *Server) handlePatchClubMember(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "validation", "Статус: active, invited, blocked или left")
 			return
 		}
+	}
+
+	if (role == sqlc.ClubMemberRoleOwner || row.Role == sqlc.ClubMemberRoleOwner) && actorRole != sqlc.ClubMemberRoleOwner {
+		writeError(w, http.StatusForbidden, "forbidden", "Менять owner может только owner клуба")
+		return
+	}
+	if clubRoleRank(role) > clubRoleRank(actorRole) {
+		writeError(w, http.StatusForbidden, "forbidden", "Нельзя назначить роль выше своей")
+		return
 	}
 
 	if _, err := s.store.Queries.UpdateClubMembership(r.Context(), sqlc.UpdateClubMembershipParams{
