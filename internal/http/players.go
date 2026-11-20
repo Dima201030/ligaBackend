@@ -47,7 +47,8 @@ func (s *Server) handleListPublicPlayers(w http.ResponseWriter, r *http.Request)
 	offset := queryInt(r, "offset", 0, 0, 100000)
 
 	rows, err := s.store.Queries.ListPublicPlayers(r.Context(), sqlc.ListPublicPlayersParams{
-		Category:    optionalText(category),
+		
+		ClubID: s.currentClubID(r),Category:    optionalText(category),
 		Query:       optionalText(query),
 		LimitCount:  int32(limit),
 		OffsetCount: int32(offset),
@@ -84,7 +85,8 @@ func (s *Server) handleListOrganizerPlayers(w http.ResponseWriter, r *http.Reque
 	offset := queryInt(r, "offset", 0, 0, 100000)
 
 	rows, err := s.store.Queries.ListOrganizerPlayers(r.Context(), sqlc.ListOrganizerPlayersParams{
-		UserStatus:  optionalText(status),
+		
+		ClubID: s.currentClubID(r),UserStatus:  optionalText(status),
 		Category:    optionalText(category),
 		LimitCount:  int32(limit),
 		OffsetCount: int32(offset),

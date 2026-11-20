@@ -48,7 +48,8 @@ func (s *Server) handleListRankings(w http.ResponseWriter, r *http.Request) {
 	category := strings.TrimSpace(r.URL.Query().Get("category"))
 
 	rows, err := s.store.Queries.ListLatestRankings(r.Context(), sqlc.ListLatestRankingsParams{
-		Season:   season,
+		
+		ClubID: s.currentClubID(r),Season:   season,
 		Category: optionalText(category),
 	})
 	if err != nil {
@@ -58,7 +59,8 @@ func (s *Server) handleListRankings(w http.ResponseWriter, r *http.Request) {
 	if len(rows) == 0 {
 		// Fallback: live table from profiles until first snapshot.
 		players, err := s.store.Queries.ListPublicPlayers(r.Context(), sqlc.ListPublicPlayersParams{
-			Category:    optionalText(category),
+			
+		ClubID: s.currentClubID(r),Category:    optionalText(category),
 			Query:       pgtype.Text{},
 			LimitCount:  500,
 			OffsetCount: 0,
@@ -194,7 +196,8 @@ func (s *Server) handleManualRating(w http.ResponseWriter, r *http.Request) {
 		season = int32(time.Now().Year())
 	}
 	ev, err := rating.ApplyManual(r.Context(), s.store, rating.ManualInput{
-		PlayerID:    playerID,
+		
+		ClubID: s.currentClubID(r),PlayerID:    playerID,
 		Season:      season,
 		PointsDelta: req.PointsDelta,
 		RatingDelta: req.RatingDelta,
@@ -239,7 +242,7 @@ func (s *Server) handleApplyTournamentRatings(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор")
 		return
 	}
-	tour, err := s.store.Queries.GetTournamentByID(r.Context(), id)
+	tour, err := s.loadClubTournament(r, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
@@ -277,7 +280,7 @@ func (s *Server) handleRatingSnapshot(w http.ResponseWriter, r *http.Request) {
 	if season == 0 {
 		season = int32(time.Now().Year())
 	}
-	at, n, err := rating.Snapshot(r.Context(), s.store, season)
+	at, n, err := rating.Snapshot(r.Context(), s.store, s.currentClubID(r), season)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось пересчитать таблицу")
 		return

@@ -11,6 +11,7 @@ import (
 
 	"github.com/Dima201030/ligaBackend/internal/crypto"
 	"github.com/Dima201030/ligaBackend/internal/db"
+	"github.com/Dima201030/ligaBackend/internal/clubs"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
 	"github.com/Dima201030/ligaBackend/internal/matches"
 	"github.com/Dima201030/ligaBackend/internal/rating"
@@ -52,8 +53,7 @@ func createPlayer(t *testing.T, store *db.Store, email string) pgtype.UUID {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Queries.CreateProfile(ctx, rating.NewProfileParams(
-		user.ID, pgtype.Text{}, "challenger", "P", email,
+	if _, err := store.Queries.CreateProfile(ctx, rating.NewProfileParams(user.ID, clubs.DefaultUUID(), pgtype.Text{}, "challenger", "P", email,
 	)); err != nil {
 		t.Fatal(err)
 	}
@@ -65,6 +65,7 @@ func createOpenTournament(t *testing.T, store *db.Store, slug string, max int32)
 	ctx := context.Background()
 	now := time.Now().UTC()
 	tour, err := store.Queries.CreateTournament(ctx, sqlc.CreateTournamentParams{
+		ClubID: clubs.DefaultUUID(),
 		Slug:                 slug,
 		Title:                "Bracket Test " + slug,
 		Description:          "integration",
@@ -644,6 +645,7 @@ func TestRoundRobinCompletesWhenAllMatchesClosed(t *testing.T) {
 	slug := fmt.Sprintf("rr-%d", time.Now().UnixNano())
 	now := time.Now().UTC()
 	tour, err := store.Queries.CreateTournament(ctx, sqlc.CreateTournamentParams{
+		ClubID: clubs.DefaultUUID(),
 		Slug:                 slug,
 		Title:                "RR " + slug,
 		Description:          "rr",

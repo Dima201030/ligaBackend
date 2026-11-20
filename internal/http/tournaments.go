@@ -178,7 +178,7 @@ func (s *Server) handleGetOrganizerTournament(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор")
 		return
 	}
-	tour, err := s.store.Queries.GetTournamentByID(r.Context(), id)
+	tour, err := s.loadClubTournament(r, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
@@ -244,7 +244,7 @@ func (s *Server) handleCreateTournament(w http.ResponseWriter, r *http.Request) 
 	}
 	base := slug
 	for i := 0; i < 20; i++ {
-		exists, err := s.store.Queries.SlugExists(ctx, slug)
+		exists, err := s.store.Queries.SlugExists(ctx, sqlc.SlugExistsParams{ClubID: s.currentClubID(r), Slug: slug})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "Не удалось создать турнир")
 			return
@@ -264,7 +264,8 @@ func (s *Server) handleCreateTournament(w http.ResponseWriter, r *http.Request) 
 	q := s.store.Queries.WithTx(tx)
 
 	tour, err := q.CreateTournament(ctx, sqlc.CreateTournamentParams{
-		Slug:                 slug,
+		
+		ClubID: s.currentClubID(r),Slug:                 slug,
 		Title:                parsed.title,
 		Description:          parsed.description,
 		Type:                 parsed.typ,
@@ -381,7 +382,10 @@ func (s *Server) handleUpdateTournament(w http.ResponseWriter, r *http.Request) 
 	defer tx.Rollback(ctx)
 	q := s.store.Queries.WithTx(tx)
 
-	before, err := q.GetTournamentByID(ctx, id)
+	before, err := q.GetTournamentByClubAndID(ctx, sqlc.GetTournamentByClubAndIDParams{
+		ClubID: s.currentClubID(r),
+		ID:     id,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")

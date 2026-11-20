@@ -17,6 +17,7 @@ type venueJSON struct {
 
 type tournamentJSON struct {
 	ID                   string    `json:"id"`
+	ClubID               string    `json:"club_id,omitempty"`
 	Slug                 string    `json:"slug"`
 	Title                string    `json:"title"`
 	Description          string    `json:"description"`
@@ -65,8 +66,10 @@ type registrationJSON struct {
 }
 
 func tournamentFromRow(t sqlc.Tournament, regulations string) tournamentJSON {
+	clubID := uuidString(t.ClubID)
 	out := tournamentJSON{
 		ID:                   uuidString(t.ID),
+		ClubID:               clubID,
 		Slug:                 t.Slug,
 		Title:                t.Title,
 		Description:          t.Description,
@@ -79,7 +82,7 @@ func tournamentFromRow(t sqlc.Tournament, regulations string) tournamentJSON {
 		RegistrationOpensAt:  formatTS(t.RegistrationOpensAt),
 		RegistrationClosesAt: formatTS(t.RegistrationClosesAt),
 		Venue: venueJSON{
-			ID:      "club-default",
+			ID:      clubID,
 			Name:    t.VenueName,
 			Address: t.VenueAddress,
 			Courts:  t.VenueCourts,

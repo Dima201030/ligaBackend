@@ -112,10 +112,20 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	clubID := s.currentClubID(r)
 	profile, err := q.CreateProfile(ctx, rating.NewProfileParams(
-		user.ID, auth.TextOrNull(phone), level, firstName, lastName,
+		user.ID, clubID, auth.TextOrNull(phone), level, firstName, lastName,
 	))
 	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось создать аккаунт")
+		return
+	}
+	if _, err := q.CreateClubMembership(ctx, sqlc.CreateClubMembershipParams{
+		ClubID: clubID,
+		UserID: user.ID,
+		Role:   sqlc.ClubMemberRolePlayer,
+		Status: sqlc.ClubMemberStatusActive,
+	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось создать аккаунт")
 		return
 	}

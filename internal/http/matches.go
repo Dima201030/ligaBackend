@@ -118,7 +118,7 @@ func (s *Server) handleGetOrganizerBracket(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор")
 		return
 	}
-	tour, err := s.store.Queries.GetTournamentByID(r.Context(), id)
+	tour, err := s.loadClubTournament(r, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
@@ -269,7 +269,7 @@ func (s *Server) handleListOrganizerTournamentMatches(w http.ResponseWriter, r *
 		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор")
 		return
 	}
-	if _, err := s.store.Queries.GetTournamentByID(r.Context(), id); err != nil {
+	if _, err := s.loadClubTournament(r, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
 			return

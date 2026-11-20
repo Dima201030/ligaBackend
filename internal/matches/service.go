@@ -781,6 +781,7 @@ func applyMatchRating(ctx context.Context, q *sqlc.Queries, match sqlc.Match, si
 	doubles := side1.PartnerID.Valid || side2.PartnerID.Valid ||
 		tour.Type == sqlc.TournamentTypeDoubles || tour.Type == sqlc.TournamentTypeMixed
 	return rating.ApplyMatchElo(ctx, q, rating.MatchEloInput{
+		ClubID:       tour.ClubID,
 		MatchID:      match.ID,
 		TournamentID: match.TournamentID,
 		Season:       tour.Season,

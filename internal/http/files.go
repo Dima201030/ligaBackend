@@ -71,7 +71,8 @@ func (s *Server) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	row, err := s.store.Queries.CreateFile(r.Context(), sqlc.CreateFileParams{
-		Bucket:       meta.Bucket,
+		
+		ClubID: s.currentClubID(r),Bucket:       meta.Bucket,
 		Path:         meta.RelPath,
 		OriginalName: meta.OriginalName,
 		Mime:         meta.MIME,
@@ -94,7 +95,7 @@ func (s *Server) handleGetFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор")
 		return
 	}
-	row, err := s.store.Queries.GetFileByID(r.Context(), id)
+	row, err := s.store.Queries.GetFileByClubAndID(r.Context(), sqlc.GetFileByClubAndIDParams{ClubID: s.currentClubID(r), ID: id})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Файл не найден")
@@ -272,7 +273,8 @@ func (s *Server) uploadAndCreate(r *http.Request, actorID pgtype.UUID) (sqlc.Fil
 		height = pgtype.Int4{Int32: int32(meta.Height), Valid: true}
 	}
 	row, err := s.store.Queries.CreateFile(r.Context(), sqlc.CreateFileParams{
-		Bucket:       meta.Bucket,
+		
+		ClubID: s.currentClubID(r),Bucket:       meta.Bucket,
 		Path:         meta.RelPath,
 		OriginalName: meta.OriginalName,
 		Mime:         meta.MIME,

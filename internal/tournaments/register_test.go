@@ -9,6 +9,7 @@ import (
 
 	"github.com/Dima201030/ligaBackend/internal/crypto"
 	"github.com/Dima201030/ligaBackend/internal/db"
+	"github.com/Dima201030/ligaBackend/internal/clubs"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
 	"github.com/Dima201030/ligaBackend/internal/rating"
 	"github.com/Dima201030/ligaBackend/internal/tournaments"
@@ -49,8 +50,7 @@ func createApprovedPlayer(t *testing.T, store *db.Store, email string) pgtype.UU
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Queries.CreateProfile(ctx, rating.NewProfileParams(
-		user.ID, pgtype.Text{}, "challenger", "Test", "Player",
+	if _, err := store.Queries.CreateProfile(ctx, rating.NewProfileParams(user.ID, clubs.DefaultUUID(), pgtype.Text{}, "challenger", "Test", "Player",
 	)); err != nil {
 		t.Fatal(err)
 	}
@@ -62,6 +62,7 @@ func createOpenTournament(t *testing.T, store *db.Store, slug string, max int32)
 	ctx := context.Background()
 	now := time.Now().UTC()
 	tour, err := store.Queries.CreateTournament(ctx, sqlc.CreateTournamentParams{
+		ClubID: clubs.DefaultUUID(),
 		Slug:                 slug,
 		Title:                "Capacity Test " + slug,
 		Description:          "Integration capacity test tournament",

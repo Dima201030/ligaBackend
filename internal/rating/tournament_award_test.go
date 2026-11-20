@@ -9,6 +9,7 @@ import (
 
 	"github.com/Dima201030/ligaBackend/internal/crypto"
 	"github.com/Dima201030/ligaBackend/internal/db"
+	"github.com/Dima201030/ligaBackend/internal/clubs"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
 	"github.com/Dima201030/ligaBackend/internal/rating"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -52,8 +53,7 @@ func TestApplyTournamentPointsIdempotentAndIncludesPartner(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.Queries.CreateProfile(ctx, rating.NewProfileParams(
-			user.ID, pgtype.Text{}, "futures", "A", "B",
+		if _, err := store.Queries.CreateProfile(ctx, rating.NewProfileParams(user.ID, clubs.DefaultUUID(), pgtype.Text{}, "futures", "A", "B",
 		)); err != nil {
 			t.Fatal(err)
 		}
@@ -64,6 +64,7 @@ func TestApplyTournamentPointsIdempotentAndIncludesPartner(t *testing.T) {
 	p2 := mkPlayer("award-p2-" + suffix + "@example.com")
 	now := time.Now().UTC()
 	tour, err := store.Queries.CreateTournament(ctx, sqlc.CreateTournamentParams{
+		ClubID: clubs.DefaultUUID(),
 		Slug:                 "award-" + suffix,
 		Title:                "Award Test",
 		Description:          "d",
@@ -152,8 +153,7 @@ func TestApplyTournamentPointsWalkoverOnlyHalves(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.Queries.CreateProfile(ctx, rating.NewProfileParams(
-			user.ID, pgtype.Text{}, "futures", "W", "O",
+		if _, err := store.Queries.CreateProfile(ctx, rating.NewProfileParams(user.ID, clubs.DefaultUUID(), pgtype.Text{}, "futures", "W", "O",
 		)); err != nil {
 			t.Fatal(err)
 		}
@@ -163,6 +163,7 @@ func TestApplyTournamentPointsWalkoverOnlyHalves(t *testing.T) {
 	p2 := mk("wo-b-" + suffix + "@example.com")
 	now := time.Now().UTC()
 	tour, err := store.Queries.CreateTournament(ctx, sqlc.CreateTournamentParams{
+		ClubID: clubs.DefaultUUID(),
 		Slug: "wo-" + suffix, Title: "Walkover Award Test", Description: "walkover-only award integration",
 		Type: sqlc.TournamentTypeSingles, Category: "futures",
 		Surface: sqlc.SurfaceTypeHard, Format: sqlc.TournamentFormatOlympic,
@@ -257,8 +258,7 @@ func TestApplyTournamentPointsConsolation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.Queries.CreateProfile(ctx, rating.NewProfileParams(
-			user.ID, pgtype.Text{}, "futures", "C", "S",
+		if _, err := store.Queries.CreateProfile(ctx, rating.NewProfileParams(user.ID, clubs.DefaultUUID(), pgtype.Text{}, "futures", "C", "S",
 		)); err != nil {
 			t.Fatal(err)
 		}
@@ -268,6 +268,7 @@ func TestApplyTournamentPointsConsolation(t *testing.T) {
 	p2 := mk("cs-b-" + suffix + "@example.com")
 	now := time.Now().UTC()
 	tour, err := store.Queries.CreateTournament(ctx, sqlc.CreateTournamentParams{
+		ClubID: clubs.DefaultUUID(),
 		Slug: "cs-" + suffix, Title: "Consolation Award Test", Description: "consolation award integration",
 		Type: sqlc.TournamentTypeSingles, Category: "futures",
 		Surface: sqlc.SurfaceTypeHard, Format: sqlc.TournamentFormatOlympic,
@@ -342,8 +343,7 @@ func TestApplyTournamentPointsDEPlaces(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.Queries.CreateProfile(ctx, rating.NewProfileParams(
-			user.ID, pgtype.Text{}, "futures", "D", "E",
+		if _, err := store.Queries.CreateProfile(ctx, rating.NewProfileParams(user.ID, clubs.DefaultUUID(), pgtype.Text{}, "futures", "D", "E",
 		)); err != nil {
 			t.Fatal(err)
 		}
@@ -355,6 +355,7 @@ func TestApplyTournamentPointsDEPlaces(t *testing.T) {
 	fourth := mk("de-4-" + suffix + "@example.com")
 	now := time.Now().UTC()
 	tour, err := store.Queries.CreateTournament(ctx, sqlc.CreateTournamentParams{
+		ClubID: clubs.DefaultUUID(),
 		Slug: "de-" + suffix, Title: "DE Place Award", Description: "de place-based awards",
 		Type: sqlc.TournamentTypeSingles, Category: "futures",
 		Surface: sqlc.SurfaceTypeHard, Format: sqlc.TournamentFormatDoubleElimination,

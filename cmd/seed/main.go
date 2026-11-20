@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Dima201030/ligaBackend/internal/clubs"
 	"github.com/Dima201030/ligaBackend/internal/config"
 	"github.com/Dima201030/ligaBackend/internal/crypto"
 	"github.com/Dima201030/ligaBackend/internal/db"
@@ -97,10 +98,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("create user: %v", err)
 	}
+	clubID := clubs.DefaultUUID()
 	if _, err := q.CreateProfile(ctx, rating.NewProfileParams(
-		user.ID, pgtype.Text{}, level, firstName, lastName,
+		user.ID, clubID, pgtype.Text{}, level, firstName, lastName,
 	)); err != nil {
 		log.Fatalf("create profile: %v", err)
+	}
+	if _, err := q.CreateClubMembership(ctx, sqlc.CreateClubMembershipParams{
+		ClubID: clubID,
+		UserID: user.ID,
+		Role:   sqlc.ClubMemberRoleOrganizer,
+		Status: sqlc.ClubMemberStatusActive,
+	}); err != nil {
+		log.Fatalf("create membership: %v", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		log.Fatalf("commit: %v", err)

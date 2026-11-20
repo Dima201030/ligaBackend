@@ -79,6 +79,27 @@ func (s *Server) sameClub(entityClubID pgtype.UUID, r *http.Request) bool {
 	return entityClubID.Valid && cur.Valid && entityClubID.Bytes == cur.Bytes
 }
 
+func (s *Server) loadClubTournament(r *http.Request, id pgtype.UUID) (sqlc.Tournament, error) {
+	return s.store.Queries.GetTournamentByClubAndID(r.Context(), sqlc.GetTournamentByClubAndIDParams{
+		ClubID: s.currentClubID(r),
+		ID:     id,
+	})
+}
+
+func (s *Server) loadClubNews(r *http.Request, id pgtype.UUID) (sqlc.NewsPost, error) {
+	return s.store.Queries.GetNewsPostByClubAndID(r.Context(), sqlc.GetNewsPostByClubAndIDParams{
+		ClubID: s.currentClubID(r),
+		ID:     id,
+	})
+}
+
+func (s *Server) loadClubEvent(r *http.Request, id pgtype.UUID) (sqlc.ClubEvent, error) {
+	return s.store.Queries.GetClubEventByClubAndID(r.Context(), sqlc.GetClubEventByClubAndIDParams{
+		ClubID: s.currentClubID(r),
+		ID:     id,
+	})
+}
+
 func resolveClubSlug(r *http.Request, fallback string) string {
 	if h := clubs.NormalizeSlug(r.Header.Get("X-Club-Slug")); h != "" {
 		return h

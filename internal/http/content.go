@@ -90,7 +90,8 @@ func (s *Server) handleListPublicNews(w http.ResponseWriter, r *http.Request) {
 	limit := queryInt(r, "limit", 20, 1, 100)
 	offset := queryInt(r, "offset", 0, 0, 100000)
 	rows, err := s.store.Queries.ListPublishedNews(r.Context(), sqlc.ListPublishedNewsParams{
-		Tag:         optionalText(tag),
+		
+		ClubID: s.currentClubID(r),Tag:         optionalText(tag),
 		LimitCount:  int32(limit),
 		OffsetCount: int32(offset),
 	})
@@ -128,7 +129,8 @@ func (s *Server) handleListOrganizerNews(w http.ResponseWriter, r *http.Request)
 	limit := queryInt(r, "limit", 50, 1, 200)
 	offset := queryInt(r, "offset", 0, 0, 100000)
 	rows, err := s.store.Queries.ListOrganizerNews(r.Context(), sqlc.ListOrganizerNewsParams{
-		Status:      optionalText(status),
+		
+		ClubID: s.currentClubID(r),Status:      optionalText(status),
 		LimitCount:  int32(limit),
 		OffsetCount: int32(offset),
 	})
@@ -178,7 +180,7 @@ func (s *Server) handleUpdateNews(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор")
 		return
 	}
-	existing, err := s.store.Queries.GetNewsPostByID(r.Context(), id)
+	existing, err := s.loadClubNews(r, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Новость не найдена")
@@ -210,7 +212,8 @@ func (s *Server) handleListPublicEvents(w http.ResponseWriter, r *http.Request) 
 	limit := queryInt(r, "limit", 50, 1, 200)
 	offset := queryInt(r, "offset", 0, 0, 100000)
 	rows, err := s.store.Queries.ListPublishedEvents(r.Context(), sqlc.ListPublishedEventsParams{
-		Kind:        optionalText(kind),
+		
+		ClubID: s.currentClubID(r),Kind:        optionalText(kind),
 		LimitCount:  int32(limit),
 		OffsetCount: int32(offset),
 	})
@@ -248,7 +251,8 @@ func (s *Server) handleListOrganizerEvents(w http.ResponseWriter, r *http.Reques
 	limit := queryInt(r, "limit", 50, 1, 200)
 	offset := queryInt(r, "offset", 0, 0, 100000)
 	rows, err := s.store.Queries.ListOrganizerEvents(r.Context(), sqlc.ListOrganizerEventsParams{
-		Status:      optionalText(status),
+		
+		ClubID: s.currentClubID(r),Status:      optionalText(status),
 		LimitCount:  int32(limit),
 		OffsetCount: int32(offset),
 	})
@@ -298,7 +302,7 @@ func (s *Server) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор")
 		return
 	}
-	existing, err := s.store.Queries.GetClubEventByID(r.Context(), id)
+	existing, err := s.loadClubEvent(r, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Событие не найдено")
@@ -374,7 +378,8 @@ func (s *Server) handleUpsertPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row, err := s.store.Queries.UpsertPage(r.Context(), sqlc.UpsertPageParams{
-		Slug:         slug,
+		
+		ClubID: s.currentClubID(r),Slug:         slug,
 		Title:        title,
 		BodyMarkdown: req.BodyMarkdown,
 		UpdatedBy:    actor.ID,
@@ -389,7 +394,8 @@ func (s *Server) handleUpsertPage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) buildNewsCreate(r *http.Request, actor *auth.SessionUser, req newsWriteRequest) (sqlc.CreateNewsPostParams, error) {
 	title := strings.TrimSpace(req.Title)
 	if utf8.RuneCountInString(title) < 3 {
-		return sqlc.CreateNewsPostParams{}, errors.New("Заголовок слишком короткий")
+		return sqlc.CreateNewsPostParams{
+		ClubID: s.currentClubID(r),}, errors.New("Заголовок слишком короткий")
 	}
 	slug := strings.TrimSpace(req.Slug)
 	if slug == "" {
@@ -398,7 +404,8 @@ func (s *Server) buildNewsCreate(r *http.Request, actor *auth.SessionUser, req n
 	slug = tournaments.Slugify(slug)
 	status, err := parseContentStatus(req.Status, sqlc.ContentStatusDraft)
 	if err != nil {
-		return sqlc.CreateNewsPostParams{}, err
+		return sqlc.CreateNewsPostParams{
+		ClubID: s.currentClubID(r),}, err
 	}
 	body := normalizeBody(req.Body)
 	bodyJSON, _ := json.Marshal(body)
@@ -408,11 +415,13 @@ func (s *Server) buildNewsCreate(r *http.Request, actor *auth.SessionUser, req n
 	}
 	publishedAt, err := resolvePublishedAt(status, req.PublishedAt, pgtype.Timestamptz{})
 	if err != nil {
-		return sqlc.CreateNewsPostParams{}, err
+		return sqlc.CreateNewsPostParams{
+		ClubID: s.currentClubID(r),}, err
 	}
 	cover := optionalTextPtr(req.CoverURL)
 	return sqlc.CreateNewsPostParams{
-		Slug:        slug,
+		
+		ClubID: s.currentClubID(r),Slug:        slug,
 		Title:       title,
 		Excerpt:     strings.TrimSpace(req.Excerpt),
 		BodyJson:    bodyJSON,
@@ -484,7 +493,8 @@ func buildNewsUpdate(existing sqlc.NewsPost, req newsWriteRequest) (sqlc.UpdateN
 func (s *Server) buildEventCreate(r *http.Request, actor *auth.SessionUser, req eventWriteRequest) (sqlc.CreateClubEventParams, error) {
 	title := strings.TrimSpace(req.Title)
 	if utf8.RuneCountInString(title) < 3 {
-		return sqlc.CreateClubEventParams{}, errors.New("Заголовок слишком короткий")
+		return sqlc.CreateClubEventParams{
+		ClubID: s.currentClubID(r),}, errors.New("Заголовок слишком короткий")
 	}
 	slug := strings.TrimSpace(req.Slug)
 	if slug == "" {
@@ -493,25 +503,30 @@ func (s *Server) buildEventCreate(r *http.Request, actor *auth.SessionUser, req 
 	slug = tournaments.Slugify(slug)
 	kind, err := parseEventKind(req.Kind)
 	if err != nil {
-		return sqlc.CreateClubEventParams{}, err
+		return sqlc.CreateClubEventParams{
+		ClubID: s.currentClubID(r),}, err
 	}
 	status, err := parseContentStatus(req.Status, sqlc.ContentStatusDraft)
 	if err != nil {
-		return sqlc.CreateClubEventParams{}, err
+		return sqlc.CreateClubEventParams{
+		ClubID: s.currentClubID(r),}, err
 	}
 	starts, err := time.Parse(time.RFC3339, strings.TrimSpace(req.StartsAt))
 	if err != nil {
-		return sqlc.CreateClubEventParams{}, errors.New("Некорректная дата starts_at")
+		return sqlc.CreateClubEventParams{
+		ClubID: s.currentClubID(r),}, errors.New("Некорректная дата starts_at")
 	}
 	var seats pgtype.Int4
 	if req.SeatsLeft != nil {
 		if *req.SeatsLeft < 0 {
-			return sqlc.CreateClubEventParams{}, errors.New("seats_left не может быть отрицательным")
+			return sqlc.CreateClubEventParams{
+		ClubID: s.currentClubID(r),}, errors.New("seats_left не может быть отрицательным")
 		}
 		seats = pgtype.Int4{Int32: *req.SeatsLeft, Valid: true}
 	}
 	return sqlc.CreateClubEventParams{
-		Slug:        slug,
+		
+		ClubID: s.currentClubID(r),Slug:        slug,
 		Title:       title,
 		Kind:        kind,
 		Description: strings.TrimSpace(req.Description),
