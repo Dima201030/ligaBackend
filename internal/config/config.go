@@ -22,6 +22,11 @@ type Config struct {
 	SMTPUser                 string
 	SMTPPassword             string
 	SMTPFrom                 string
+	UploadsDir               string
+	MaxUploadBytes           int64
+	DefaultClubSlug          string
+	// CORSOrigins allows browser Origins (e.g. https://pairly.space). Empty → defaults.
+	CORSOrigins []string
 }
 
 // Load reads configuration from environment variables.
@@ -71,6 +76,19 @@ func Load() (Config, error) {
 		cfg.SMTPPort = 587
 	}
 
+	cfg.UploadsDir = envOr("UPLOADS_DIR", "./data/uploads")
+	cfg.DefaultClubSlug = strings.ToLower(envOr("DEFAULT_CLUB_SLUG", "mr-pushkin"))
+	cfg.CORSOrigins = parseCORSOrigins(os.Getenv("CORS_ORIGINS"))
+	if v := strings.TrimSpace(os.Getenv("MAX_UPLOAD_BYTES")); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < 1024 {
+			return Config{}, fmt.Errorf("MAX_UPLOAD_BYTES: invalid %q", v)
+		}
+		cfg.MaxUploadBytes = n
+	} else {
+		cfg.MaxUploadBytes = 5 << 20 // 5 MiB
+	}
+
 	return cfg, nil
 }
 
@@ -107,4 +125,44 @@ func envBool(key string, fallback bool) bool {
 	default:
 		return fallback
 	}
+}
+
+var defaultCORSOrigins = []string{
+	"https://pairly.space",
+	"https://www.pairly.space",
+}
+
+func parseCORSOrigins(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		out := make([]string, len(defaultCORSOrigins))
+		copy(out, defaultCORSOrigins)
+		return out
+	}
+	if raw == "-" || strings.EqualFold(raw, "none") {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimRight(strings.TrimSpace(p), "/")
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// AllowsCORSOrigin reports whether origin is in the allow-list.
+func (c Config) AllowsCORSOrigin(origin string) bool {
+	origin = strings.TrimRight(strings.TrimSpace(origin), "/")
+	if origin == "" {
+		return false
+	}
+	for _, allowed := range c.CORSOrigins {
+		if strings.EqualFold(allowed, origin) {
+			return true
+		}
+	}
+	return false
 }

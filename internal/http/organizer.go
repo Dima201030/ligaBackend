@@ -21,7 +21,7 @@ type approveRequest struct {
 }
 
 func (s *Server) handleListApplications(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.store.Queries.ListApplications(r.Context())
+	rows, err := s.store.Queries.ListApplications(r.Context(), s.currentClubID(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить заявки")
 		return

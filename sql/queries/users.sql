@@ -67,7 +67,30 @@ SELECT
     p.level
 FROM users u
 JOIN profiles p ON p.user_id = u.id
-WHERE u.role = 'player'
+WHERE p.club_id = $1
+  AND u.role = 'player'
 ORDER BY
     CASE u.status WHEN 'pending' THEN 0 ELSE 1 END,
     u.created_at DESC;
+
+-- name: ListPlayerBriefsByIDs :many
+SELECT u.id, u.first_name, u.last_name, COALESCE(p.level, '') AS level
+FROM users u
+LEFT JOIN profiles p ON p.user_id = u.id
+WHERE u.id = ANY($1::uuid[]);
+
+-- name: UpdateUserPassword :one
+UPDATE users
+SET password_hash = $2, updated_at = now()
+WHERE id = $1
+RETURNING id, email, password_hash, first_name, last_name, role, status,
+          email_verified_at, created_at, updated_at;
+
+-- name: UpdateUserNames :one
+UPDATE users
+SET first_name = $2,
+    last_name = $3,
+    updated_at = now()
+WHERE id = $1
+RETURNING id, email, password_hash, first_name, last_name, role, status,
+          email_verified_at, created_at, updated_at;
