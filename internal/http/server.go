@@ -63,6 +63,7 @@ func NewWithOptions(opts Options) *Server {
 	s.router.Use(middleware.RequestID)
 	s.router.Use(middleware.RealIP)
 	s.router.Use(middleware.Recoverer)
+	s.router.Use(s.withCORS)
 	s.router.Use(s.withSession)
 	s.router.Use(s.withClub)
 

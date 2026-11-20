@@ -14,13 +14,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// publicClubJSON is the browser/BFF-facing club card: no settings/secrets.
+type publicClubJSON struct {
+	ID     string `json:"id"`
+	Slug   string `json:"slug"`
+	Name   string `json:"name"`
+	City   string `json:"city"`
+	Status string `json:"status"`
+}
+
 type clubJSON struct {
-	ID     string          `json:"id"`
-	Slug   string          `json:"slug"`
-	Name   string          `json:"name"`
-	City   string          `json:"city"`
-	Status string          `json:"status"`
+	ID       string          `json:"id"`
+	Slug     string          `json:"slug"`
+	Name     string          `json:"name"`
+	City     string          `json:"city"`
+	Status   string          `json:"status"`
 	Settings json.RawMessage `json:"settings,omitempty"`
+}
+
+func publicClubFromRow(row sqlc.Club) publicClubJSON {
+	return publicClubJSON{
+		ID:     uuidString(row.ID),
+		Slug:   row.Slug,
+		Name:   row.Name,
+		City:   row.City,
+		Status: string(row.Status),
+	}
 }
 
 func clubFromRow(row sqlc.Club) clubJSON {
@@ -43,9 +62,9 @@ func (s *Server) handleListClubs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить клубы")
 		return
 	}
-	out := make([]clubJSON, 0, len(rows))
+	out := make([]publicClubJSON, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, clubFromRow(row))
+		out = append(out, publicClubFromRow(row))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"clubs": out})
 }
@@ -65,7 +84,7 @@ func (s *Server) handleGetClub(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить клуб")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"club": clubFromRow(row)})
+	writeJSON(w, http.StatusOK, map[string]any{"club": publicClubFromRow(row)})
 }
 
 type onboardClubRequest struct {
