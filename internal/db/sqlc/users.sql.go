@@ -199,7 +199,8 @@ SELECT
     p.level
 FROM users u
 JOIN profiles p ON p.user_id = u.id
-WHERE u.role = 'player'
+WHERE p.club_id = $1
+  AND u.role = 'player'
 ORDER BY
     CASE u.status WHEN 'pending' THEN 0 ELSE 1 END,
     u.created_at DESC
@@ -219,8 +220,8 @@ type ListApplicationsRow struct {
 	Level           string
 }
 
-func (q *Queries) ListApplications(ctx context.Context) ([]ListApplicationsRow, error) {
-	rows, err := q.db.Query(ctx, listApplications)
+func (q *Queries) ListApplications(ctx context.Context, clubID pgtype.UUID) ([]ListApplicationsRow, error) {
+	rows, err := q.db.Query(ctx, listApplications, clubID)
 	if err != nil {
 		return nil, err
 	}
@@ -239,6 +240,45 @@ func (q *Queries) ListApplications(ctx context.Context) ([]ListApplicationsRow, 
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Phone,
+			&i.Level,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlayerBriefsByIDs = `-- name: ListPlayerBriefsByIDs :many
+SELECT u.id, u.first_name, u.last_name, COALESCE(p.level, '') AS level
+FROM users u
+LEFT JOIN profiles p ON p.user_id = u.id
+WHERE u.id = ANY($1::uuid[])
+`
+
+type ListPlayerBriefsByIDsRow struct {
+	ID        pgtype.UUID
+	FirstName string
+	LastName  string
+	Level     string
+}
+
+func (q *Queries) ListPlayerBriefsByIDs(ctx context.Context, dollar_1 []pgtype.UUID) ([]ListPlayerBriefsByIDsRow, error) {
+	rows, err := q.db.Query(ctx, listPlayerBriefsByIDs, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPlayerBriefsByIDsRow{}
+	for rows.Next() {
+		var i ListPlayerBriefsByIDsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FirstName,
+			&i.LastName,
 			&i.Level,
 		); err != nil {
 			return nil, err
@@ -287,6 +327,37 @@ RETURNING id, email, password_hash, first_name, last_name, role, status,
 
 func (q *Queries) RejectUser(ctx context.Context, id pgtype.UUID) (User, error) {
 	row := q.db.QueryRow(ctx, rejectUser, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.FirstName,
+		&i.LastName,
+		&i.Role,
+		&i.Status,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateUserPassword = `-- name: UpdateUserPassword :one
+UPDATE users
+SET password_hash = $2, updated_at = now()
+WHERE id = $1
+RETURNING id, email, password_hash, first_name, last_name, role, status,
+          email_verified_at, created_at, updated_at
+`
+
+type UpdateUserPasswordParams struct {
+	ID           pgtype.UUID
+	PasswordHash string
+}
+
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserPassword, arg.ID, arg.PasswordHash)
 	var i User
 	err := row.Scan(
 		&i.ID,
