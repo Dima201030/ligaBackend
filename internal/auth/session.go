@@ -17,8 +17,10 @@ import (
 )
 
 const (
+	// Absolute and idle TTLs match so a stored cookie remains valid for the full
+	// browser lifetime as long as the user returns within that window.
 	SessionAbsoluteTTL = 30 * 24 * time.Hour
-	SessionIdleTTL     = 7 * 24 * time.Hour
+	SessionIdleTTL     = 30 * 24 * time.Hour
 	SessionTokenBytes  = 32
 )
 

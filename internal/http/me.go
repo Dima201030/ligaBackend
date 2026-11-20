@@ -45,6 +45,10 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
 		return
 	}
+	// Sliding browser Max-Age on session probe (header / guards call /auth/me often).
+	if cookie, err := r.Cookie(s.cfg.SessionCookieName()); err == nil && cookie.Value != "" {
+		s.setSessionCookie(w, cookie.Value)
+	}
 	out := map[string]any{"user": sessionUserJSON(user)}
 	prof, err := s.store.Queries.GetProfileByUserID(r.Context(), user.ID)
 	if err == nil {

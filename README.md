@@ -109,7 +109,9 @@ double_elimination (порт `src/lib/bracket.ts`).
 `POST /api/organizer/ratings/snapshot`.
 
 Сессия: 32 random bytes в cookie `mpl_session` (prod: `__Host-mpl_session`),
-HttpOnly + SameSite=Lax + Secure(prod); в БД только SHA-256(token).
+HttpOnly + SameSite=Lax + Secure(prod), Path=/; в БД только SHA-256(token).
+TTL absolute = idle = 30 суток; idle в БД продлевается при любом auth-запросе,
+cookie Max-Age — sliding при успешном `GET /api/auth/me`.
 
 ### Uploads
 
