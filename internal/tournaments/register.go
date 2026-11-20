@@ -96,15 +96,23 @@ func CreateRegistration(ctx context.Context, store *db.Store, in CreateRegistrat
 		return sqlc.Registration{}, ErrInvalidPairFlags
 	}
 
-	busy, err := q.PlayerAlreadyActiveInTournament(ctx, sqlc.PlayerAlreadyActiveInTournamentParams{
+	existing, err := q.LockRegistrationByTournamentPlayer(ctx, sqlc.LockRegistrationByTournamentPlayerParams{
 		TournamentID: in.TournamentID,
 		PlayerID:     in.PlayerID,
 	})
-	if err != nil {
+	reactivate := false
+	switch {
+	case err == nil:
+		switch existing.Status {
+		case sqlc.RegistrationStatusCancelled, sqlc.RegistrationStatusRejected:
+			reactivate = true
+		default:
+			return sqlc.Registration{}, ErrAlreadyRegistered
+		}
+	case errors.Is(err, pgx.ErrNoRows):
+		// first registration for this player/tournament
+	default:
 		return sqlc.Registration{}, err
-	}
-	if busy {
-		return sqlc.Registration{}, ErrAlreadyRegistered
 	}
 
 	if in.PartnerID.Valid {
@@ -147,21 +155,40 @@ func CreateRegistration(ctx context.Context, store *db.Store, in CreateRegistrat
 		confirmedAt = pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 	}
 
-	reg, err := q.CreateRegistration(ctx, sqlc.CreateRegistrationParams{
-		TournamentID:      in.TournamentID,
-		PlayerID:          in.PlayerID,
-		PartnerID:         in.PartnerID,
-		LookingForPartner: in.LookingForPartner,
-		Status:            status,
-		WaitlistPosition:  waitlistPos,
-		ConfirmedAt:       confirmedAt,
-	})
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return sqlc.Registration{}, ErrAlreadyRegistered
+	var reg sqlc.Registration
+	if reactivate {
+		reg, err = q.ReactivateRegistration(ctx, sqlc.ReactivateRegistrationParams{
+			TournamentID:      in.TournamentID,
+			PlayerID:          in.PlayerID,
+			PartnerID:         in.PartnerID,
+			LookingForPartner: in.LookingForPartner,
+			Status:            status,
+			WaitlistPosition:  waitlistPos,
+			ConfirmedAt:       confirmedAt,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return sqlc.Registration{}, ErrAlreadyRegistered
+			}
+			return sqlc.Registration{}, err
 		}
-		return sqlc.Registration{}, err
+	} else {
+		reg, err = q.CreateRegistration(ctx, sqlc.CreateRegistrationParams{
+			TournamentID:      in.TournamentID,
+			PlayerID:          in.PlayerID,
+			PartnerID:         in.PartnerID,
+			LookingForPartner: in.LookingForPartner,
+			Status:            status,
+			WaitlistPosition:  waitlistPos,
+			ConfirmedAt:       confirmedAt,
+		})
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				return sqlc.Registration{}, ErrAlreadyRegistered
+			}
+			return sqlc.Registration{}, err
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

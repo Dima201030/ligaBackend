@@ -7,6 +7,20 @@ INSERT INTO registrations (
 )
 RETURNING *;
 
+-- name: ReactivateRegistration :one
+UPDATE registrations
+SET partner_id = $3,
+    looking_for_partner = $4,
+    status = $5,
+    waitlist_position = $6,
+    confirmed_at = $7,
+    cancelled_at = NULL,
+    seed = NULL
+WHERE tournament_id = $1
+  AND player_id = $2
+  AND status IN ('cancelled', 'rejected')
+RETURNING *;
+
 -- name: GetRegistrationByTournamentPlayer :one
 SELECT * FROM registrations
 WHERE tournament_id = $1 AND player_id = $2;

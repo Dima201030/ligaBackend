@@ -208,6 +208,64 @@ func TestUpdateRegistrationStatus_ConfirmRejectAndDemote(t *testing.T) {
 	}
 }
 
+func TestCreateRegistration_ReregisterAfterCancelAndReject(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	suffix := time.Now().UnixNano()
+	tour := createOpenTournament(t, store, "rereg-"+itoa(suffix), 4)
+	player := createApprovedPlayer(t, store, "rereg-"+itoa(suffix)+"@example.com")
+
+	first, err := tournaments.CreateRegistration(ctx, store, tournaments.CreateRegistrationInput{
+		TournamentID: tour.ID, PlayerID: player,
+	})
+	if err != nil || first.Status != sqlc.RegistrationStatusConfirmed {
+		t.Fatalf("first: status=%s err=%v", first.Status, err)
+	}
+
+	cancelled, err := tournaments.CancelRegistration(ctx, store, tour.ID, player)
+	if err != nil || cancelled.Status != sqlc.RegistrationStatusCancelled {
+		t.Fatalf("cancel: status=%s err=%v", cancelled.Status, err)
+	}
+	if cancelled.ID.Bytes != first.ID.Bytes {
+		t.Fatal("cancel must keep same registration id")
+	}
+
+	second, err := tournaments.CreateRegistration(ctx, store, tournaments.CreateRegistrationInput{
+		TournamentID: tour.ID, PlayerID: player,
+	})
+	if err != nil || second.Status != sqlc.RegistrationStatusConfirmed {
+		t.Fatalf("reregister after cancel: status=%s err=%v", second.Status, err)
+	}
+	if second.ID.Bytes != first.ID.Bytes {
+		t.Fatal("reregister must reactivate same row, not insert")
+	}
+	if second.CancelledAt.Valid {
+		t.Fatal("reactivated registration must clear cancelled_at")
+	}
+
+	_, err = tournaments.CreateRegistration(ctx, store, tournaments.CreateRegistrationInput{
+		TournamentID: tour.ID, PlayerID: player,
+	})
+	if !errors.Is(err, tournaments.ErrAlreadyRegistered) {
+		t.Fatalf("active duplicate: want already_registered, got %v", err)
+	}
+
+	rejected, _, err := tournaments.UpdateRegistrationStatus(ctx, store, tour.ID, second.ID, "rejected")
+	if err != nil || rejected.Status != sqlc.RegistrationStatusRejected {
+		t.Fatalf("reject: status=%s err=%v", rejected.Status, err)
+	}
+
+	third, err := tournaments.CreateRegistration(ctx, store, tournaments.CreateRegistrationInput{
+		TournamentID: tour.ID, PlayerID: player,
+	})
+	if err != nil || third.Status != sqlc.RegistrationStatusConfirmed {
+		t.Fatalf("reregister after reject: status=%s err=%v", third.Status, err)
+	}
+	if third.ID.Bytes != first.ID.Bytes {
+		t.Fatal("reregister after reject must reuse same row")
+	}
+}
+
 func TestCreateRegistration_ParallelDoesNotExceedMax(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
