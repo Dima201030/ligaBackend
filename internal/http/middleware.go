@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/Dima201030/ligaBackend/internal/auth"
+	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
 )
 
 func (s *Server) withSession(next http.Handler) http.Handler {
@@ -38,6 +39,21 @@ func (s *Server) requireOrganizer(next http.Handler) http.Handler {
 		}
 		if !auth.IsOrganizerOrAbove(user.Role) {
 			writeError(w, http.StatusForbidden, "forbidden", "Недостаточно прав")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) requireApproved(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := auth.UserFromContext(r.Context())
+		if user == nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
+			return
+		}
+		if user.Status != sqlc.UserStatusApproved {
+			writeError(w, http.StatusForbidden, "forbidden", "Заявка доступна только подтверждённым игрокам")
 			return
 		}
 		next.ServeHTTP(w, r)
