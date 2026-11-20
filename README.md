@@ -162,7 +162,8 @@ docker compose --profile jobs up -d rankingsnapshot
 # локально (нужны SMTP_* в env)
 go run ./cmd/mailworker
 
-# compose profile (не стартует без SMTP_HOST/SMTP_FROM)
+# compose profile (нужны SMTP_HOST + SMTP_FROM в .env)
+# COMPOSE_PROFILES=jobs,smtp
 docker compose --profile smtp up -d mailworker
 ```
 
