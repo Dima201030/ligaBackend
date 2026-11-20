@@ -18,6 +18,11 @@ UPDATE sessions
 SET revoked_at = now()
 WHERE id = $1 AND revoked_at IS NULL;
 
+-- name: RevokeUserSessions :exec
+UPDATE sessions
+SET revoked_at = now()
+WHERE user_id = $1 AND revoked_at IS NULL;
+
 -- name: TouchSession :one
 UPDATE sessions
 SET last_seen_at = now(),
