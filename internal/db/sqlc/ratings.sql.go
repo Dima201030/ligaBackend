@@ -278,6 +278,42 @@ func (q *Queries) InsertRankingRow(ctx context.Context, arg InsertRankingRowPara
 	return i, err
 }
 
+const insertRatingConfig = `-- name: InsertRatingConfig :one
+INSERT INTO rating_configs (club_id, season, version, coefficients, created_by)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, club_id, season, version, coefficients, active_from, created_by, created_at
+`
+
+type InsertRatingConfigParams struct {
+	ClubID       pgtype.UUID
+	Season       int32
+	Version      int32
+	Coefficients []byte
+	CreatedBy    pgtype.UUID
+}
+
+func (q *Queries) InsertRatingConfig(ctx context.Context, arg InsertRatingConfigParams) (RatingConfig, error) {
+	row := q.db.QueryRow(ctx, insertRatingConfig,
+		arg.ClubID,
+		arg.Season,
+		arg.Version,
+		arg.Coefficients,
+		arg.CreatedBy,
+	)
+	var i RatingConfig
+	err := row.Scan(
+		&i.ID,
+		&i.ClubID,
+		&i.Season,
+		&i.Version,
+		&i.Coefficients,
+		&i.ActiveFrom,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const insertRatingEvent = `-- name: InsertRatingEvent :one
 INSERT INTO rating_events (
     player_id, match_id, tournament_id, kind, discipline,

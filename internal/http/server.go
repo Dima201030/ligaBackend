@@ -82,6 +82,7 @@ func NewWithOptions(opts Options) *Server {
 		r.Post("/forgot-password", s.handleForgotPassword)
 		r.Post("/reset-password", s.handleResetPassword)
 		r.With(s.requireAuth).Get("/me", s.handleMe)
+		r.With(s.requireAuth).Get("/me/clubs", s.handleMyClubs)
 		r.With(s.requireAuth, s.requireApproved).Get("/me/registrations", s.handleMyRegistrations)
 		r.With(s.requireAuth, s.requireApproved).Get("/me/matches", s.handleMyMatches)
 	})
@@ -109,6 +110,7 @@ func NewWithOptions(opts Options) *Server {
 	s.router.Route("/api/organizer", func(r chi.Router) {
 		r.Use(s.requireAuth)
 		r.Use(s.requireOrganizer)
+		r.Post("/clubs", s.handleOnboardClub)
 		r.Get("/applications", s.handleListApplications)
 		r.Post("/applications/{id}/approve", s.handleApproveApplication)
 		r.Post("/applications/{id}/reject", s.handleRejectApplication)

@@ -43,6 +43,8 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | POST | `/api/organizer/applications/{id}/reject` | Reject |
 | GET | `/api/clubs` | Активные клубы (tenancy) |
 | GET | `/api/clubs/{slug}` | Карточка клуба |
+| GET | `/api/auth/me/clubs` | Клубы текущего пользователя (memberships) |
+| POST | `/api/organizer/clubs` | Онбординг клуба: seed pages + rating_config + owner membership |
 | GET | `/api/tournaments` | Публичный список клуба (без draft; `X-Club-Slug` / `?club=` / `DEFAULT_CLUB_SLUG`) |
 | GET | `/api/tournaments/{slug}` | Карточка + заявки |
 | POST | `/api/tournaments/{slug}/registrations` | Заявка (approved) |

@@ -5,6 +5,11 @@ WHERE club_id = $1 AND season = $2
 ORDER BY version DESC
 LIMIT 1;
 
+-- name: InsertRatingConfig :one
+INSERT INTO rating_configs (club_id, season, version, coefficients, created_by)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING *;
+
 -- name: GetRatingConfigByID :one
 SELECT id, club_id, season, version, coefficients, active_from, created_by, created_at
 FROM rating_configs
