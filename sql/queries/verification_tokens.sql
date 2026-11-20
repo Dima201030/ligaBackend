@@ -13,3 +13,10 @@ UPDATE verification_tokens
 SET used_at = now()
 WHERE id = $1 AND used_at IS NULL AND expires_at > now()
 RETURNING id, user_id, kind, token_hash, expires_at, used_at, created_at;
+
+-- name: InvalidateUnusedTokens :exec
+UPDATE verification_tokens
+SET used_at = now()
+WHERE user_id = $1
+  AND kind = $2
+  AND used_at IS NULL;
