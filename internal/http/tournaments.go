@@ -55,6 +55,10 @@ type createRegistrationRequest struct {
 	LookingForPartner bool    `json:"looking_for_partner"`
 }
 
+type updateRegistrationStatusRequest struct {
+	Status string `json:"status"`
+}
+
 func (s *Server) handleListPublicTournaments(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.store.Queries.ListPublicTournaments(r.Context(), s.currentClubID(r))
 	if err != nil {
@@ -188,7 +192,7 @@ func (s *Server) handleGetOrganizerTournament(w http.ResponseWriter, r *http.Req
 		return
 	}
 	regsText, _ := s.latestRegulations(r, tour.ID)
-	regs, err := s.store.Queries.ListRegistrationsByTournament(r.Context(), tour.ID)
+	regs, err := s.store.Queries.ListOrganizerRegistrationsByTournament(r.Context(), tour.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить заявки")
 		return
@@ -196,7 +200,7 @@ func (s *Server) handleGetOrganizerTournament(w http.ResponseWriter, r *http.Req
 	list := make([]registrationJSON, 0, len(regs))
 	var confirmed, pending, waitlist int32
 	for _, row := range regs {
-		list = append(list, registrationFromListRow(row))
+		list = append(list, registrationFromOrganizerListRow(row))
 		switch row.Status {
 		case sqlc.RegistrationStatusConfirmed:
 			confirmed++
@@ -218,6 +222,57 @@ func (s *Server) handleGetOrganizerTournament(w http.ResponseWriter, r *http.Req
 			"waitlist":  waitlist,
 		},
 	})
+}
+
+func (s *Server) handleUpdateOrganizerRegistrationStatus(w http.ResponseWriter, r *http.Request) {
+	tournamentID, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор турнира")
+		return
+	}
+	regID, err := parseUUID(chi.URLParam(r, "regId"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор заявки")
+		return
+	}
+	if _, err := s.loadClubTournament(r, tournamentID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турнир")
+		return
+	}
+
+	var req updateRegistrationStatusRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Некорректное тело запроса")
+		return
+	}
+	status := strings.TrimSpace(req.Status)
+	if status == "" {
+		writeError(w, http.StatusBadRequest, "validation", "Укажите статус заявки")
+		return
+	}
+
+	reg, err := tournaments.UpdateRegistrationStatus(r.Context(), s.store, tournamentID, regID, status)
+	if err != nil {
+		switch {
+		case errors.Is(err, tournaments.ErrInvalidStatus):
+			writeError(w, http.StatusBadRequest, "validation", "Недопустимый статус заявки")
+		case errors.Is(err, tournaments.ErrNotRegistered), errors.Is(err, tournaments.ErrRegistrationMismatch):
+			writeError(w, http.StatusNotFound, "not_found", "Заявка не найдена")
+		case errors.Is(err, tournaments.ErrTournamentNotFound):
+			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
+		case errors.Is(err, tournaments.ErrCapacityFull):
+			writeError(w, http.StatusConflict, "capacity_full", "Нет свободных мест в основном составе")
+		default:
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось обновить статус заявки")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"registration": registrationFromModel(reg)})
 }
 
 func (s *Server) handleCreateTournament(w http.ResponseWriter, r *http.Request) {
@@ -264,8 +319,8 @@ func (s *Server) handleCreateTournament(w http.ResponseWriter, r *http.Request) 
 	q := s.store.Queries.WithTx(tx)
 
 	tour, err := q.CreateTournament(ctx, sqlc.CreateTournamentParams{
-		
-		ClubID: s.currentClubID(r),Slug:                 slug,
+
+		ClubID: s.currentClubID(r), Slug: slug,
 		Title:                parsed.title,
 		Description:          parsed.description,
 		Type:                 parsed.typ,

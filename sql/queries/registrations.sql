@@ -52,6 +52,15 @@ ORDER BY waitlist_position ASC NULLS LAST, created_at ASC
 LIMIT 1
 FOR UPDATE;
 
+-- name: LockOldestWaitlistExcept :one
+SELECT * FROM registrations
+WHERE tournament_id = $1
+  AND status = 'waitlist'
+  AND id <> $2
+ORDER BY waitlist_position ASC NULLS LAST, created_at ASC
+LIMIT 1
+FOR UPDATE;
+
 -- name: PromoteRegistration :one
 UPDATE registrations
 SET status = 'confirmed',
@@ -95,6 +104,64 @@ ORDER BY
     END,
     r.seed ASC NULLS LAST,
     r.created_at ASC;
+
+-- name: ListOrganizerRegistrationsByTournament :many
+SELECT
+    r.id,
+    r.tournament_id,
+    r.player_id,
+    r.partner_id,
+    r.looking_for_partner,
+    r.status,
+    r.seed,
+    r.waitlist_position,
+    r.created_at,
+    r.confirmed_at,
+    r.cancelled_at,
+    pu.first_name AS player_first_name,
+    pu.last_name AS player_last_name,
+    pp.level AS player_level,
+    partner_u.first_name AS partner_first_name,
+    partner_u.last_name AS partner_last_name,
+    partner_p.level AS partner_level
+FROM registrations r
+JOIN users pu ON pu.id = r.player_id
+JOIN profiles pp ON pp.user_id = r.player_id
+LEFT JOIN users partner_u ON partner_u.id = r.partner_id
+LEFT JOIN profiles partner_p ON partner_p.user_id = r.partner_id
+WHERE r.tournament_id = $1
+ORDER BY
+    CASE r.status
+        WHEN 'confirmed' THEN 0
+        WHEN 'pending' THEN 1
+        WHEN 'waitlist' THEN 2
+        WHEN 'rejected' THEN 3
+        WHEN 'cancelled' THEN 4
+        ELSE 5
+    END,
+    r.seed ASC NULLS LAST,
+    r.created_at ASC;
+
+-- name: GetRegistrationByID :one
+SELECT * FROM registrations WHERE id = $1;
+
+-- name: LockRegistrationByID :one
+SELECT * FROM registrations WHERE id = $1 FOR UPDATE;
+
+-- name: SetRegistrationStatus :one
+UPDATE registrations
+SET status = $2,
+    confirmed_at = CASE
+        WHEN $2::registration_status = 'confirmed' THEN COALESCE(confirmed_at, now())
+        ELSE confirmed_at
+    END,
+    cancelled_at = CASE
+        WHEN $2::registration_status IN ('cancelled', 'rejected') THEN now()
+        ELSE NULL
+    END,
+    waitlist_position = sqlc.narg(waitlist_position)
+WHERE id = $1
+RETURNING *;
 
 -- name: GetApprovedUserByID :one
 SELECT id, email, password_hash, first_name, last_name, role, status,

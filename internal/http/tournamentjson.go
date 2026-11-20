@@ -114,42 +114,68 @@ func tournamentFromRow(t sqlc.Tournament, regulations string) tournamentJSON {
 }
 
 func registrationFromListRow(row sqlc.ListRegistrationsByTournamentRow) registrationJSON {
+	return registrationFromJoinedRow(
+		row.ID, row.TournamentID, row.PlayerID, row.PartnerID,
+		row.LookingForPartner, row.Status, row.Seed, row.WaitlistPosition, row.CreatedAt,
+		row.PlayerFirstName, row.PlayerLastName, row.PlayerLevel,
+		row.PartnerFirstName, row.PartnerLastName, row.PartnerLevel,
+	)
+}
+
+func registrationFromOrganizerListRow(row sqlc.ListOrganizerRegistrationsByTournamentRow) registrationJSON {
+	return registrationFromJoinedRow(
+		row.ID, row.TournamentID, row.PlayerID, row.PartnerID,
+		row.LookingForPartner, row.Status, row.Seed, row.WaitlistPosition, row.CreatedAt,
+		row.PlayerFirstName, row.PlayerLastName, row.PlayerLevel,
+		row.PartnerFirstName, row.PartnerLastName, row.PartnerLevel,
+	)
+}
+
+func registrationFromJoinedRow(
+	id, tournamentID, playerID, partnerID pgtype.UUID,
+	lookingForPartner bool,
+	status sqlc.RegistrationStatus,
+	seed, waitlistPosition pgtype.Int4,
+	createdAt pgtype.Timestamptz,
+	playerFirstName, playerLastName, playerLevel string,
+	partnerFirstName, partnerLastName, partnerLevel pgtype.Text,
+) registrationJSON {
 	out := registrationJSON{
-		ID:                uuidString(row.ID),
-		TournamentID:      uuidString(row.TournamentID),
-		PlayerID:          uuidString(row.PlayerID),
-		LookingForPartner: row.LookingForPartner,
-		Status:            string(row.Status),
-		RegisteredAt:      formatTS(row.CreatedAt),
+		ID:                uuidString(id),
+		TournamentID:      uuidString(tournamentID),
+		PlayerID:          uuidString(playerID),
+		LookingForPartner: lookingForPartner,
+		Status:            string(status),
+		RegisteredAt:      formatTS(createdAt),
 		Player: playerBriefJSON{
-			ID:        uuidString(row.PlayerID),
-			FirstName: row.PlayerFirstName,
-			LastName:  row.PlayerLastName,
-			Level:     row.PlayerLevel,
+			ID:        uuidString(playerID),
+			FirstName: playerFirstName,
+			LastName:  playerLastName,
+			Level:     playerLevel,
 		},
 	}
-	if row.PartnerID.Valid {
-		id := uuidString(row.PartnerID)
-		out.PartnerID = &id
-		if row.PartnerFirstName.Valid && row.PartnerLastName.Valid {
+	if partnerID.Valid {
+		pid := uuidString(partnerID)
+		out.PartnerID = &pid
+		if partnerFirstName.Valid && partnerLastName.Valid {
 			level := ""
-			if row.PartnerLevel.Valid {
-				level = row.PartnerLevel.String
+			if partnerLevel.Valid {
+				level = partnerLevel.String
 			}
 			out.Partner = &playerBriefJSON{
-				ID:        id,
-				FirstName: row.PartnerFirstName.String,
-				LastName:  row.PartnerLastName.String,
+				ID:        pid,
+				FirstName: partnerFirstName.String,
+				LastName:  partnerLastName.String,
 				Level:     level,
 			}
 		}
 	}
-	if row.Seed.Valid {
-		v := row.Seed.Int32
+	if seed.Valid {
+		v := seed.Int32
 		out.Seed = &v
 	}
-	if row.WaitlistPosition.Valid {
-		v := row.WaitlistPosition.Int32
+	if waitlistPosition.Valid {
+		v := waitlistPosition.Int32
 		out.WaitlistPosition = &v
 	}
 	return out

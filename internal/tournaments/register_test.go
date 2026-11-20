@@ -2,14 +2,15 @@ package tournaments_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Dima201030/ligaBackend/internal/clubs"
 	"github.com/Dima201030/ligaBackend/internal/crypto"
 	"github.com/Dima201030/ligaBackend/internal/db"
-	"github.com/Dima201030/ligaBackend/internal/clubs"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
 	"github.com/Dima201030/ligaBackend/internal/rating"
 	"github.com/Dima201030/ligaBackend/internal/tournaments"
@@ -50,8 +51,7 @@ func createApprovedPlayer(t *testing.T, store *db.Store, email string) pgtype.UU
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Queries.CreateProfile(ctx, rating.NewProfileParams(user.ID, clubs.DefaultUUID(), pgtype.Text{}, "challenger", "Test", "Player",
-	)); err != nil {
+	if _, err := store.Queries.CreateProfile(ctx, rating.NewProfileParams(user.ID, clubs.DefaultUUID(), pgtype.Text{}, "challenger", "Test", "Player")); err != nil {
 		t.Fatal(err)
 	}
 	return user.ID
@@ -62,7 +62,7 @@ func createOpenTournament(t *testing.T, store *db.Store, slug string, max int32)
 	ctx := context.Background()
 	now := time.Now().UTC()
 	tour, err := store.Queries.CreateTournament(ctx, sqlc.CreateTournamentParams{
-		ClubID: clubs.DefaultUUID(),
+		ClubID:               clubs.DefaultUUID(),
 		Slug:                 slug,
 		Title:                "Capacity Test " + slug,
 		Description:          "Integration capacity test tournament",
@@ -142,6 +142,63 @@ func TestCreateRegistration_CapacityAndWaitlist(t *testing.T) {
 	}
 	if promoted.Status != sqlc.RegistrationStatusConfirmed {
 		t.Fatalf("expected promote to confirmed, got %s", promoted.Status)
+	}
+}
+
+func TestUpdateRegistrationStatus_ConfirmRejectAndDemote(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	suffix := time.Now().UnixNano()
+	tour := createOpenTournament(t, store, "status-test-"+itoa(suffix), 1)
+
+	p1 := createApprovedPlayer(t, store, "st1-"+itoa(suffix)+"@example.com")
+	p2 := createApprovedPlayer(t, store, "st2-"+itoa(suffix)+"@example.com")
+
+	r1, err := tournaments.CreateRegistration(ctx, store, tournaments.CreateRegistrationInput{
+		TournamentID: tour.ID, PlayerID: p1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2, err := tournaments.CreateRegistration(ctx, store, tournaments.CreateRegistrationInput{
+		TournamentID: tour.ID, PlayerID: p2,
+	})
+	if err != nil || r2.Status != sqlc.RegistrationStatusWaitlist {
+		t.Fatalf("r2 waitlist: status=%s err=%v", r2.Status, err)
+	}
+
+	rejected, err := tournaments.UpdateRegistrationStatus(ctx, store, tour.ID, r1.ID, "rejected")
+	if err != nil || rejected.Status != sqlc.RegistrationStatusRejected {
+		t.Fatalf("reject: status=%s err=%v", rejected.Status, err)
+	}
+	promoted, err := store.Queries.GetRegistrationByID(ctx, r2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if promoted.Status != sqlc.RegistrationStatusConfirmed {
+		t.Fatalf("expected waitlist promote after reject, got %s", promoted.Status)
+	}
+
+	demoted, err := tournaments.UpdateRegistrationStatus(ctx, store, tour.ID, promoted.ID, "waitlist")
+	if err != nil || demoted.Status != sqlc.RegistrationStatusWaitlist {
+		t.Fatalf("demote: status=%s err=%v", demoted.Status, err)
+	}
+	still, err := store.Queries.GetRegistrationByID(ctx, demoted.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if still.Status != sqlc.RegistrationStatusWaitlist {
+		t.Fatalf("demote must not self-promote, got %s", still.Status)
+	}
+
+	restored, err := tournaments.UpdateRegistrationStatus(ctx, store, tour.ID, rejected.ID, "confirmed")
+	if err != nil || restored.Status != sqlc.RegistrationStatusConfirmed {
+		t.Fatalf("restore confirmed: status=%s err=%v", restored.Status, err)
+	}
+
+	_, err = tournaments.UpdateRegistrationStatus(ctx, store, tour.ID, demoted.ID, "confirmed")
+	if !errors.Is(err, tournaments.ErrCapacityFull) {
+		t.Fatalf("expected capacity_full, got %v", err)
 	}
 }
 

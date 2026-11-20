@@ -13,16 +13,36 @@ import (
 )
 
 var (
-	ErrTournamentNotFound = errors.New("tournament not found")
-	ErrRegistrationClosed = errors.New("registration closed")
-	ErrAlreadyRegistered  = errors.New("already registered")
-	ErrPartnerBusy        = errors.New("partner busy")
-	ErrSelfPartner        = errors.New("self partner")
-	ErrPartnerRequired    = errors.New("partner required")
-	ErrPartnerNotFound    = errors.New("partner not found")
-	ErrNotRegistered      = errors.New("not registered")
-	ErrInvalidPairFlags   = errors.New("invalid pair flags")
+	ErrTournamentNotFound   = errors.New("tournament not found")
+	ErrRegistrationClosed   = errors.New("registration closed")
+	ErrAlreadyRegistered    = errors.New("already registered")
+	ErrPartnerBusy          = errors.New("partner busy")
+	ErrSelfPartner          = errors.New("self partner")
+	ErrPartnerRequired      = errors.New("partner required")
+	ErrPartnerNotFound      = errors.New("partner not found")
+	ErrNotRegistered        = errors.New("not registered")
+	ErrInvalidPairFlags     = errors.New("invalid pair flags")
+	ErrInvalidStatus        = errors.New("invalid registration status")
+	ErrCapacityFull         = errors.New("tournament capacity full")
+	ErrRegistrationMismatch = errors.New("registration tournament mismatch")
 )
+
+func isOccupyingStatus(s sqlc.RegistrationStatus) bool {
+	return s == sqlc.RegistrationStatusConfirmed || s == sqlc.RegistrationStatusPending
+}
+
+func parseRegistrationStatus(raw string) (sqlc.RegistrationStatus, bool) {
+	switch sqlc.RegistrationStatus(raw) {
+	case sqlc.RegistrationStatusPending,
+		sqlc.RegistrationStatusConfirmed,
+		sqlc.RegistrationStatusWaitlist,
+		sqlc.RegistrationStatusCancelled,
+		sqlc.RegistrationStatusRejected:
+		return sqlc.RegistrationStatus(raw), true
+	default:
+		return "", false
+	}
+}
 
 // IsPairType reports whether the tournament type needs a partner or looking_for_partner.
 func IsPairType(t sqlc.TournamentType) bool {
@@ -201,6 +221,115 @@ func CancelRegistration(ctx context.Context, store *db.Store, tournamentID, play
 		}
 		if occupied < tour.MaxParticipants {
 			wait, err := q.LockOldestWaitlist(ctx, tournamentID)
+			if err == nil {
+				if _, err := q.PromoteRegistration(ctx, wait.ID); err != nil {
+					return sqlc.Registration{}, err
+				}
+			} else if !errors.Is(err, pgx.ErrNoRows) {
+				return sqlc.Registration{}, err
+			}
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return sqlc.Registration{}, err
+	}
+	return reg, nil
+}
+
+// UpdateRegistrationStatus lets an organizer move a registration between statuses.
+// Capacity is enforced when entering confirmed/pending from a non-occupying status.
+// Freeing an occupying seat promotes the oldest waitlist entry (same as cancel).
+func UpdateRegistrationStatus(
+	ctx context.Context,
+	store *db.Store,
+	tournamentID, registrationID pgtype.UUID,
+	newStatusRaw string,
+) (sqlc.Registration, error) {
+	newStatus, ok := parseRegistrationStatus(newStatusRaw)
+	if !ok {
+		return sqlc.Registration{}, ErrInvalidStatus
+	}
+
+	tx, err := store.Pool.Begin(ctx)
+	if err != nil {
+		return sqlc.Registration{}, err
+	}
+	defer tx.Rollback(ctx)
+	q := store.Queries.WithTx(tx)
+
+	tour, err := q.LockTournamentByID(ctx, tournamentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return sqlc.Registration{}, ErrTournamentNotFound
+		}
+		return sqlc.Registration{}, err
+	}
+
+	before, err := q.LockRegistrationByID(ctx, registrationID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return sqlc.Registration{}, ErrNotRegistered
+		}
+		return sqlc.Registration{}, err
+	}
+	if !uuidEqual(before.TournamentID, tournamentID) {
+		return sqlc.Registration{}, ErrRegistrationMismatch
+	}
+	if before.Status == newStatus {
+		if err := tx.Commit(ctx); err != nil {
+			return sqlc.Registration{}, err
+		}
+		return before, nil
+	}
+
+	wasOccupying := isOccupyingStatus(before.Status)
+	willOccupy := isOccupyingStatus(newStatus)
+
+	if willOccupy && !wasOccupying {
+		occupied, err := q.CountOccupyingRegistrations(ctx, tournamentID)
+		if err != nil {
+			return sqlc.Registration{}, err
+		}
+		if occupied >= tour.MaxParticipants {
+			return sqlc.Registration{}, ErrCapacityFull
+		}
+	}
+
+	var waitlistPos pgtype.Int4
+	if newStatus == sqlc.RegistrationStatusWaitlist {
+		if before.Status == sqlc.RegistrationStatusWaitlist && before.WaitlistPosition.Valid {
+			waitlistPos = before.WaitlistPosition
+		} else {
+			next, err := q.NextWaitlistPosition(ctx, tournamentID)
+			if err != nil {
+				return sqlc.Registration{}, err
+			}
+			waitlistPos = pgtype.Int4{Int32: next, Valid: true}
+		}
+	}
+
+	reg, err := q.SetRegistrationStatus(ctx, sqlc.SetRegistrationStatusParams{
+		ID:               registrationID,
+		Status:           newStatus,
+		WaitlistPosition: waitlistPos,
+	})
+	if err != nil {
+		return sqlc.Registration{}, err
+	}
+
+	if wasOccupying && !willOccupy {
+		occupied, err := q.CountOccupyingRegistrations(ctx, tournamentID)
+		if err != nil {
+			return sqlc.Registration{}, err
+		}
+		if occupied < tour.MaxParticipants {
+			// Skip the row we just moved (e.g. confirmed → waitlist) so we don't
+			// immediately promote the same registration back into a seat.
+			wait, err := q.LockOldestWaitlistExcept(ctx, sqlc.LockOldestWaitlistExceptParams{
+				TournamentID: tournamentID,
+				ID:           registrationID,
+			})
 			if err == nil {
 				if _, err := q.PromoteRegistration(ctx, wait.ID); err != nil {
 					return sqlc.Registration{}, err

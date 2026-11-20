@@ -132,6 +132,29 @@ func (q *Queries) GetApprovedUserByID(ctx context.Context, id pgtype.UUID) (User
 	return i, err
 }
 
+const getRegistrationByID = `-- name: GetRegistrationByID :one
+SELECT id, tournament_id, player_id, partner_id, looking_for_partner, status, seed, waitlist_position, created_at, confirmed_at, cancelled_at FROM registrations WHERE id = $1
+`
+
+func (q *Queries) GetRegistrationByID(ctx context.Context, id pgtype.UUID) (Registration, error) {
+	row := q.db.QueryRow(ctx, getRegistrationByID, id)
+	var i Registration
+	err := row.Scan(
+		&i.ID,
+		&i.TournamentID,
+		&i.PlayerID,
+		&i.PartnerID,
+		&i.LookingForPartner,
+		&i.Status,
+		&i.Seed,
+		&i.WaitlistPosition,
+		&i.CreatedAt,
+		&i.ConfirmedAt,
+		&i.CancelledAt,
+	)
+	return i, err
+}
+
 const getRegistrationByTournamentPlayer = `-- name: GetRegistrationByTournamentPlayer :one
 SELECT id, tournament_id, player_id, partner_id, looking_for_partner, status, seed, waitlist_position, created_at, confirmed_at, cancelled_at FROM registrations
 WHERE tournament_id = $1 AND player_id = $2
@@ -159,6 +182,102 @@ func (q *Queries) GetRegistrationByTournamentPlayer(ctx context.Context, arg Get
 		&i.CancelledAt,
 	)
 	return i, err
+}
+
+const listOrganizerRegistrationsByTournament = `-- name: ListOrganizerRegistrationsByTournament :many
+SELECT
+    r.id,
+    r.tournament_id,
+    r.player_id,
+    r.partner_id,
+    r.looking_for_partner,
+    r.status,
+    r.seed,
+    r.waitlist_position,
+    r.created_at,
+    r.confirmed_at,
+    r.cancelled_at,
+    pu.first_name AS player_first_name,
+    pu.last_name AS player_last_name,
+    pp.level AS player_level,
+    partner_u.first_name AS partner_first_name,
+    partner_u.last_name AS partner_last_name,
+    partner_p.level AS partner_level
+FROM registrations r
+JOIN users pu ON pu.id = r.player_id
+JOIN profiles pp ON pp.user_id = r.player_id
+LEFT JOIN users partner_u ON partner_u.id = r.partner_id
+LEFT JOIN profiles partner_p ON partner_p.user_id = r.partner_id
+WHERE r.tournament_id = $1
+ORDER BY
+    CASE r.status
+        WHEN 'confirmed' THEN 0
+        WHEN 'pending' THEN 1
+        WHEN 'waitlist' THEN 2
+        WHEN 'rejected' THEN 3
+        WHEN 'cancelled' THEN 4
+        ELSE 5
+    END,
+    r.seed ASC NULLS LAST,
+    r.created_at ASC
+`
+
+type ListOrganizerRegistrationsByTournamentRow struct {
+	ID                pgtype.UUID
+	TournamentID      pgtype.UUID
+	PlayerID          pgtype.UUID
+	PartnerID         pgtype.UUID
+	LookingForPartner bool
+	Status            RegistrationStatus
+	Seed              pgtype.Int4
+	WaitlistPosition  pgtype.Int4
+	CreatedAt         pgtype.Timestamptz
+	ConfirmedAt       pgtype.Timestamptz
+	CancelledAt       pgtype.Timestamptz
+	PlayerFirstName   string
+	PlayerLastName    string
+	PlayerLevel       string
+	PartnerFirstName  pgtype.Text
+	PartnerLastName   pgtype.Text
+	PartnerLevel      pgtype.Text
+}
+
+func (q *Queries) ListOrganizerRegistrationsByTournament(ctx context.Context, tournamentID pgtype.UUID) ([]ListOrganizerRegistrationsByTournamentRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizerRegistrationsByTournament, tournamentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOrganizerRegistrationsByTournamentRow{}
+	for rows.Next() {
+		var i ListOrganizerRegistrationsByTournamentRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TournamentID,
+			&i.PlayerID,
+			&i.PartnerID,
+			&i.LookingForPartner,
+			&i.Status,
+			&i.Seed,
+			&i.WaitlistPosition,
+			&i.CreatedAt,
+			&i.ConfirmedAt,
+			&i.CancelledAt,
+			&i.PlayerFirstName,
+			&i.PlayerLastName,
+			&i.PlayerLevel,
+			&i.PartnerFirstName,
+			&i.PartnerLastName,
+			&i.PartnerLevel,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listRegistrationsByPlayer = `-- name: ListRegistrationsByPlayer :many
@@ -371,6 +490,63 @@ func (q *Queries) LockOldestWaitlist(ctx context.Context, tournamentID pgtype.UU
 	return i, err
 }
 
+const lockOldestWaitlistExcept = `-- name: LockOldestWaitlistExcept :one
+SELECT id, tournament_id, player_id, partner_id, looking_for_partner, status, seed, waitlist_position, created_at, confirmed_at, cancelled_at FROM registrations
+WHERE tournament_id = $1
+  AND status = 'waitlist'
+  AND id <> $2
+ORDER BY waitlist_position ASC NULLS LAST, created_at ASC
+LIMIT 1
+FOR UPDATE
+`
+
+type LockOldestWaitlistExceptParams struct {
+	TournamentID pgtype.UUID
+	ID           pgtype.UUID
+}
+
+func (q *Queries) LockOldestWaitlistExcept(ctx context.Context, arg LockOldestWaitlistExceptParams) (Registration, error) {
+	row := q.db.QueryRow(ctx, lockOldestWaitlistExcept, arg.TournamentID, arg.ID)
+	var i Registration
+	err := row.Scan(
+		&i.ID,
+		&i.TournamentID,
+		&i.PlayerID,
+		&i.PartnerID,
+		&i.LookingForPartner,
+		&i.Status,
+		&i.Seed,
+		&i.WaitlistPosition,
+		&i.CreatedAt,
+		&i.ConfirmedAt,
+		&i.CancelledAt,
+	)
+	return i, err
+}
+
+const lockRegistrationByID = `-- name: LockRegistrationByID :one
+SELECT id, tournament_id, player_id, partner_id, looking_for_partner, status, seed, waitlist_position, created_at, confirmed_at, cancelled_at FROM registrations WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) LockRegistrationByID(ctx context.Context, id pgtype.UUID) (Registration, error) {
+	row := q.db.QueryRow(ctx, lockRegistrationByID, id)
+	var i Registration
+	err := row.Scan(
+		&i.ID,
+		&i.TournamentID,
+		&i.PlayerID,
+		&i.PartnerID,
+		&i.LookingForPartner,
+		&i.Status,
+		&i.Seed,
+		&i.WaitlistPosition,
+		&i.CreatedAt,
+		&i.ConfirmedAt,
+		&i.CancelledAt,
+	)
+	return i, err
+}
+
 const lockRegistrationByTournamentPlayer = `-- name: LockRegistrationByTournamentPlayer :one
 SELECT id, tournament_id, player_id, partner_id, looking_for_partner, status, seed, waitlist_position, created_at, confirmed_at, cancelled_at FROM registrations
 WHERE tournament_id = $1 AND player_id = $2
@@ -446,6 +622,47 @@ RETURNING id, tournament_id, player_id, partner_id, looking_for_partner, status,
 
 func (q *Queries) PromoteRegistration(ctx context.Context, id pgtype.UUID) (Registration, error) {
 	row := q.db.QueryRow(ctx, promoteRegistration, id)
+	var i Registration
+	err := row.Scan(
+		&i.ID,
+		&i.TournamentID,
+		&i.PlayerID,
+		&i.PartnerID,
+		&i.LookingForPartner,
+		&i.Status,
+		&i.Seed,
+		&i.WaitlistPosition,
+		&i.CreatedAt,
+		&i.ConfirmedAt,
+		&i.CancelledAt,
+	)
+	return i, err
+}
+
+const setRegistrationStatus = `-- name: SetRegistrationStatus :one
+UPDATE registrations
+SET status = $2,
+    confirmed_at = CASE
+        WHEN $2::registration_status = 'confirmed' THEN COALESCE(confirmed_at, now())
+        ELSE confirmed_at
+    END,
+    cancelled_at = CASE
+        WHEN $2::registration_status IN ('cancelled', 'rejected') THEN now()
+        ELSE NULL
+    END,
+    waitlist_position = $3
+WHERE id = $1
+RETURNING id, tournament_id, player_id, partner_id, looking_for_partner, status, seed, waitlist_position, created_at, confirmed_at, cancelled_at
+`
+
+type SetRegistrationStatusParams struct {
+	ID               pgtype.UUID
+	Status           RegistrationStatus
+	WaitlistPosition pgtype.Int4
+}
+
+func (q *Queries) SetRegistrationStatus(ctx context.Context, arg SetRegistrationStatusParams) (Registration, error) {
+	row := q.db.QueryRow(ctx, setRegistrationStatus, arg.ID, arg.Status, arg.WaitlistPosition)
 	var i Registration
 	err := row.Scan(
 		&i.ID,
