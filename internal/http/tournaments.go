@@ -298,10 +298,21 @@ func (s *Server) handleUpdateOrganizerRegistrationStatus(w http.ResponseWriter, 
 }
 
 // enqueueTournamentRegistrationEmail queues confirm/reject/waitlist mail for a
-// tournament registration. Missing notification prefs → always enqueue (none exist yet).
+// tournament registration when the player's notification_prefs.tournaments is on
+// (default true). Disabled prefs skip outbox entirely.
 func (s *Server) enqueueTournamentRegistrationEmail(ctx context.Context, tour sqlc.Tournament, reg sqlc.Registration) {
 	template, ok := mail.TournamentRegistrationTemplate(string(reg.Status))
 	if !ok {
+		return
+	}
+	var prefsRaw []byte
+	if prof, err := s.store.Queries.GetProfileByUserID(ctx, reg.PlayerID); err == nil {
+		prefsRaw = prof.NotificationPrefs
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		log.Printf("tournament registration email: load prefs: %v", err)
+	}
+	if !allowsTournamentRegistrationEmails(prefsRaw) {
+		log.Printf("tournament registration email: skipped template=%s (tournaments prefs off)", template)
 		return
 	}
 	user, err := s.store.Queries.GetUserByID(ctx, reg.PlayerID)
