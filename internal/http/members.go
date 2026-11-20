@@ -363,6 +363,18 @@ func (s *Server) handlePatchClubMember(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "forbidden", "Нельзя назначить роль выше своей")
 		return
 	}
+	losingOwner := row.Role == sqlc.ClubMemberRoleOwner && row.Status == sqlc.ClubMemberStatusActive &&
+		(role != sqlc.ClubMemberRoleOwner || status != sqlc.ClubMemberStatusActive)
+	if losingOwner {
+		if err := s.ensureNotLastActiveOwner(r, clubID); err != nil {
+			if errors.Is(err, errLastOwner) {
+				writeError(w, http.StatusConflict, "last_owner", "Нельзя снять последнего owner клуба")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось проверить владельцев")
+			return
+		}
+	}
 
 	if _, err := s.store.Queries.UpdateClubMembership(r.Context(), sqlc.UpdateClubMembershipParams{
 		ClubID: clubID,
@@ -371,6 +383,96 @@ func (s *Server) handlePatchClubMember(w http.ResponseWriter, r *http.Request) {
 		Status: status,
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось обновить участника")
+		return
+	}
+	updated, err := s.store.Queries.GetClubMembershipByID(r.Context(), sqlc.GetClubMembershipByIDParams{
+		ID:     id,
+		ClubID: clubID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить участника")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"member": memberFromGetRow(updated)})
+}
+
+var errLastOwner = errors.New("last owner")
+
+func (s *Server) ensureNotLastActiveOwner(r *http.Request, clubID pgtype.UUID) error {
+	n, err := s.store.Queries.CountActiveClubOwners(r.Context(), clubID)
+	if err != nil {
+		return err
+	}
+	if n <= 1 {
+		return errLastOwner
+	}
+	return nil
+}
+
+// handleDeleteClubMember soft-removes a membership (status=left).
+// Organizers cannot remove owners; the last active owner cannot be removed.
+func (s *Server) handleDeleteClubMember(w http.ResponseWriter, r *http.Request) {
+	actorRole, err := s.actorClubMembershipRole(r)
+	if err != nil {
+		if errors.Is(err, errUnauthorized) {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
+			return
+		}
+		if errors.Is(err, errForbiddenClub) {
+			writeError(w, http.StatusForbidden, "forbidden", "Нужна роль organizer или owner в этом клубе")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось проверить права")
+		return
+	}
+	id, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор")
+		return
+	}
+	clubID := s.currentClubID(r)
+	row, err := s.store.Queries.GetClubMembershipByID(r.Context(), sqlc.GetClubMembershipByIDParams{
+		ID:     id,
+		ClubID: clubID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Участник не найден")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить участника")
+		return
+	}
+	if row.Status == sqlc.ClubMemberStatusLeft {
+		writeJSON(w, http.StatusOK, map[string]any{"member": memberFromGetRow(row)})
+		return
+	}
+	if row.Role == sqlc.ClubMemberRoleOwner && actorRole != sqlc.ClubMemberRoleOwner {
+		writeError(w, http.StatusForbidden, "forbidden", "Удалить owner может только owner клуба")
+		return
+	}
+	if clubRoleRank(row.Role) > clubRoleRank(actorRole) {
+		writeError(w, http.StatusForbidden, "forbidden", "Нельзя удалить участника с ролью выше своей")
+		return
+	}
+	if row.Role == sqlc.ClubMemberRoleOwner && row.Status == sqlc.ClubMemberStatusActive {
+		if err := s.ensureNotLastActiveOwner(r, clubID); err != nil {
+			if errors.Is(err, errLastOwner) {
+				writeError(w, http.StatusConflict, "last_owner", "Нельзя удалить последнего owner клуба")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось проверить владельцев")
+			return
+		}
+	}
+
+	if _, err := s.store.Queries.UpdateClubMembership(r.Context(), sqlc.UpdateClubMembershipParams{
+		ClubID: clubID,
+		UserID: row.UserID,
+		Role:   row.Role,
+		Status: sqlc.ClubMemberStatusLeft,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось удалить участника")
 		return
 	}
 	updated, err := s.store.Queries.GetClubMembershipByID(r.Context(), sqlc.GetClubMembershipByIDParams{
