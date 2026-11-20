@@ -10,13 +10,15 @@ RETURNING *;
 
 -- name: GetProfileByUserID :one
 SELECT user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
-       rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+       rating, points, singles_points, doubles_points, matches_played, wins, losses,
+       notification_prefs, created_at, updated_at
 FROM profiles
 WHERE user_id = $1;
 
 -- name: GetProfileBySlug :one
 SELECT user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
-       rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+       rating, points, singles_points, doubles_points, matches_played, wins, losses,
+       notification_prefs, created_at, updated_at
 FROM profiles
 WHERE club_id = $1 AND slug = $2;
 
@@ -36,6 +38,24 @@ SET gender = COALESCE(sqlc.narg(gender), gender),
     updated_at = now()
 WHERE user_id = sqlc.arg(user_id)
 RETURNING *;
+
+-- name: UpdateMyProfile :one
+UPDATE profiles
+SET phone = $2,
+    city = $3,
+    bio = $4,
+    level = $5,
+    gender = $6,
+    updated_at = now()
+WHERE user_id = $1
+RETURNING *;
+
+-- name: UpdateNotificationPrefs :one
+UPDATE profiles
+SET notification_prefs = $2,
+    updated_at = now()
+WHERE user_id = $1
+RETURNING user_id, notification_prefs, updated_at;
 
 -- name: ListPublicPlayers :many
 SELECT

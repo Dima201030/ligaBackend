@@ -48,21 +48,8 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"user": sessionUserJSON(user)}
 	prof, err := s.store.Queries.GetProfileByUserID(r.Context(), user.ID)
 	if err == nil {
-		out["profile"] = meProfileJSON{
-			Slug:          prof.Slug,
-			City:          prof.City,
-			Bio:           prof.Bio,
-			AvatarURL:     textPtr(prof.AvatarUrl),
-			Status:        prof.PlayerStatus,
-			Rating:        round1(prof.Rating),
-			Points:        prof.Points,
-			SinglesPoints: prof.SinglesPoints,
-			DoublesPoints: prof.DoublesPoints,
-			MatchesPlayed: prof.MatchesPlayed,
-			Wins:          prof.Wins,
-			Losses:        prof.Losses,
-			MemberSince:   formatTS(prof.CreatedAt),
-		}
+		out["profile"] = meProfileFromRow(prof)
+		out["notifications"] = decodeNotificationPrefs(prof.NotificationPrefs)
 	}
 	writeJSON(w, http.StatusOK, out)
 }

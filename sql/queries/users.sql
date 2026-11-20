@@ -85,3 +85,12 @@ SET password_hash = $2, updated_at = now()
 WHERE id = $1
 RETURNING id, email, password_hash, first_name, last_name, role, status,
           email_verified_at, created_at, updated_at;
+
+-- name: UpdateUserNames :one
+UPDATE users
+SET first_name = $2,
+    last_name = $3,
+    updated_at = now()
+WHERE id = $1
+RETURNING id, email, password_hash, first_name, last_name, role, status,
+          email_verified_at, created_at, updated_at;
