@@ -33,7 +33,10 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | POST | `/api/auth/register` | Регистрация → `pending` + profile + outbox |
 | POST | `/api/auth/login` | Вход (только `approved`; cookie-сессия) |
 | POST | `/api/auth/logout` | Отзыв сессии |
-| GET | `/api/auth/me` | Текущий пользователь |
+| GET | `/api/auth/me` | Текущий пользователь (+ profile, notifications) |
+| PATCH | `/api/auth/me` | Редактирование своего профиля (имя/телефон/город/bio/категория) |
+| GET | `/api/auth/me/notifications` | Предпочтения уведомлений |
+| PATCH | `/api/auth/me/notifications` | Сохранение предпочтений уведомлений |
 | GET/POST | `/api/auth/confirm-email` | Подтверждение email по токену |
 | POST | `/api/auth/resend-confirm` | Повтор письма подтверждения (анти-enumeration) |
 | POST | `/api/auth/forgot-password` | Запрос сброса пароля → outbox |

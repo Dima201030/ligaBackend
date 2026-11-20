@@ -19,7 +19,7 @@ INSERT INTO profiles (
     $1, $2, $3, $4, $5, $6, $7, $8, $9,
     $10, $11, $12, $13, $14, $15, $16, $17
 )
-RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, notification_prefs, created_at, updated_at
 `
 
 type CreateProfileParams struct {
@@ -82,6 +82,7 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
+		&i.NotificationPrefs,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -90,7 +91,8 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 
 const getProfileBySlug = `-- name: GetProfileBySlug :one
 SELECT user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
-       rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+       rating, points, singles_points, doubles_points, matches_played, wins, losses,
+       notification_prefs, created_at, updated_at
 FROM profiles
 WHERE club_id = $1 AND slug = $2
 `
@@ -122,6 +124,7 @@ func (q *Queries) GetProfileBySlug(ctx context.Context, arg GetProfileBySlugPara
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
+		&i.NotificationPrefs,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -130,7 +133,8 @@ func (q *Queries) GetProfileBySlug(ctx context.Context, arg GetProfileBySlugPara
 
 const getProfileByUserID = `-- name: GetProfileByUserID :one
 SELECT user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
-       rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+       rating, points, singles_points, doubles_points, matches_played, wins, losses,
+       notification_prefs, created_at, updated_at
 FROM profiles
 WHERE user_id = $1
 `
@@ -157,6 +161,7 @@ func (q *Queries) GetProfileByUserID(ctx context.Context, userID pgtype.UUID) (P
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
+		&i.NotificationPrefs,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -483,6 +488,89 @@ func (q *Queries) ListPublicPlayers(ctx context.Context, arg ListPublicPlayersPa
 	return items, nil
 }
 
+const updateMyProfile = `-- name: UpdateMyProfile :one
+UPDATE profiles
+SET phone = $2,
+    city = $3,
+    bio = $4,
+    level = $5,
+    gender = $6,
+    updated_at = now()
+WHERE user_id = $1
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, notification_prefs, created_at, updated_at
+`
+
+type UpdateMyProfileParams struct {
+	UserID pgtype.UUID
+	Phone  pgtype.Text
+	City   string
+	Bio    string
+	Level  string
+	Gender pgtype.Text
+}
+
+func (q *Queries) UpdateMyProfile(ctx context.Context, arg UpdateMyProfileParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, updateMyProfile,
+		arg.UserID,
+		arg.Phone,
+		arg.City,
+		arg.Bio,
+		arg.Level,
+		arg.Gender,
+	)
+	var i Profile
+	err := row.Scan(
+		&i.UserID,
+		&i.ClubID,
+		&i.Phone,
+		&i.Level,
+		&i.Slug,
+		&i.Gender,
+		&i.City,
+		&i.Bio,
+		&i.AvatarUrl,
+		&i.AvatarFileID,
+		&i.PlayerStatus,
+		&i.Rating,
+		&i.Points,
+		&i.SinglesPoints,
+		&i.DoublesPoints,
+		&i.MatchesPlayed,
+		&i.Wins,
+		&i.Losses,
+		&i.NotificationPrefs,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateNotificationPrefs = `-- name: UpdateNotificationPrefs :one
+UPDATE profiles
+SET notification_prefs = $2,
+    updated_at = now()
+WHERE user_id = $1
+RETURNING user_id, notification_prefs, updated_at
+`
+
+type UpdateNotificationPrefsParams struct {
+	UserID            pgtype.UUID
+	NotificationPrefs []byte
+}
+
+type UpdateNotificationPrefsRow struct {
+	UserID            pgtype.UUID
+	NotificationPrefs []byte
+	UpdatedAt         pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateNotificationPrefs(ctx context.Context, arg UpdateNotificationPrefsParams) (UpdateNotificationPrefsRow, error) {
+	row := q.db.QueryRow(ctx, updateNotificationPrefs, arg.UserID, arg.NotificationPrefs)
+	var i UpdateNotificationPrefsRow
+	err := row.Scan(&i.UserID, &i.NotificationPrefs, &i.UpdatedAt)
+	return i, err
+}
+
 const updateProfileLevelAndNames = `-- name: UpdateProfileLevelAndNames :exec
 UPDATE profiles
 SET level = $2, updated_at = now()
@@ -509,7 +597,7 @@ SET gender = COALESCE($1, gender),
     level = COALESCE($6, level),
     updated_at = now()
 WHERE user_id = $7
-RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, notification_prefs, created_at, updated_at
 `
 
 type UpdateProfilePublicParams struct {
@@ -552,6 +640,7 @@ func (q *Queries) UpdateProfilePublic(ctx context.Context, arg UpdateProfilePubl
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
+		&i.NotificationPrefs,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

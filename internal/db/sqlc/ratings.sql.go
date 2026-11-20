@@ -20,7 +20,7 @@ SET rating = $1,
     losses = losses + $5,
     updated_at = now()
 WHERE user_id = $6
-RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, notification_prefs, created_at, updated_at
 `
 
 type ApplyProfileRatingDeltaParams struct {
@@ -61,6 +61,7 @@ func (q *Queries) ApplyProfileRatingDelta(ctx context.Context, arg ApplyProfileR
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
+		&i.NotificationPrefs,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -667,9 +668,32 @@ WHERE user_id = $1
 FOR UPDATE
 `
 
-func (q *Queries) LockProfileForUpdate(ctx context.Context, userID pgtype.UUID) (Profile, error) {
+type LockProfileForUpdateRow struct {
+	UserID        pgtype.UUID
+	ClubID        pgtype.UUID
+	Phone         pgtype.Text
+	Level         string
+	Slug          string
+	Gender        pgtype.Text
+	City          string
+	Bio           string
+	AvatarUrl     pgtype.Text
+	AvatarFileID  pgtype.UUID
+	PlayerStatus  string
+	Rating        float64
+	Points        int32
+	SinglesPoints int32
+	DoublesPoints int32
+	MatchesPlayed int32
+	Wins          int32
+	Losses        int32
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
+func (q *Queries) LockProfileForUpdate(ctx context.Context, userID pgtype.UUID) (LockProfileForUpdateRow, error) {
 	row := q.db.QueryRow(ctx, lockProfileForUpdate, userID)
-	var i Profile
+	var i LockProfileForUpdateRow
 	err := row.Scan(
 		&i.UserID,
 		&i.ClubID,
@@ -737,7 +761,7 @@ const setProfilePoints = `-- name: SetProfilePoints :one
 UPDATE profiles
 SET points = $2, updated_at = now()
 WHERE user_id = $1
-RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, notification_prefs, created_at, updated_at
 `
 
 type SetProfilePointsParams struct {
@@ -767,6 +791,7 @@ func (q *Queries) SetProfilePoints(ctx context.Context, arg SetProfilePointsPara
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
+		&i.NotificationPrefs,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -780,7 +805,7 @@ SET singles_points = $1,
     points = $1::int + $2::int,
     updated_at = now()
 WHERE user_id = $3
-RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, rating, points, singles_points, doubles_points, matches_played, wins, losses, notification_prefs, created_at, updated_at
 `
 
 type SetProfilePointsBreakdownParams struct {
@@ -811,6 +836,7 @@ func (q *Queries) SetProfilePointsBreakdown(ctx context.Context, arg SetProfileP
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
+		&i.NotificationPrefs,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
