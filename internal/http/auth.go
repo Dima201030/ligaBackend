@@ -12,6 +12,7 @@ import (
 	"github.com/Dima201030/ligaBackend/internal/crypto"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
 	"github.com/Dima201030/ligaBackend/internal/mail"
+	"github.com/Dima201030/ligaBackend/internal/rating"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -111,12 +112,20 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := q.CreateProfile(ctx, sqlc.CreateProfileParams{
-		UserID: user.ID,
-		Phone:  auth.TextOrNull(phone),
-		Level:  level,
-	})
+	clubID := s.currentClubID(r)
+	profile, err := q.CreateProfile(ctx, rating.NewProfileParams(
+		user.ID, clubID, auth.TextOrNull(phone), level, firstName, lastName,
+	))
 	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось создать аккаунт")
+		return
+	}
+	if _, err := q.CreateClubMembership(ctx, sqlc.CreateClubMembershipParams{
+		ClubID: clubID,
+		UserID: user.ID,
+		Role:   sqlc.ClubMemberRolePlayer,
+		Status: sqlc.ClubMemberStatusActive,
+	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось создать аккаунт")
 		return
 	}
@@ -253,15 +262,6 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	s.clearSessionCookie(w)
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": sessionUserJSON(user)})
 }
 
 func (s *Server) handleConfirmEmail(w http.ResponseWriter, r *http.Request) {

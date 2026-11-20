@@ -1,7 +1,7 @@
 # ligaBackend
 
-Go API для лиги Mr. Pushkin (D-017). Этап 3: серверная авторизация, cookie-сессии,
-подтверждение email, заявки организатора.
+Go API для лиги Mr. Pushkin (D-017). Uploads (covers/avatars) + SMTP-worker + контент,
+рейтинг, матчи, турниры, auth.
 
 ## Стек
 
@@ -33,14 +33,143 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | POST | `/api/auth/register` | Регистрация → `pending` + profile + outbox |
 | POST | `/api/auth/login` | Вход (только `approved`; cookie-сессия) |
 | POST | `/api/auth/logout` | Отзыв сессии |
-| GET | `/api/auth/me` | Текущий пользователь |
+| GET | `/api/auth/me` | Текущий пользователь (+ profile, notifications) |
+| PATCH | `/api/auth/me` | Редактирование своего профиля (имя/телефон/город/bio/категория) |
+| GET | `/api/auth/me/notifications` | Предпочтения уведомлений |
+| PATCH | `/api/auth/me/notifications` | Сохранение предпочтений уведомлений |
 | GET/POST | `/api/auth/confirm-email` | Подтверждение email по токену |
+| POST | `/api/auth/resend-confirm` | Повтор письма подтверждения (анти-enumeration) |
+| POST | `/api/auth/forgot-password` | Запрос сброса пароля → outbox |
+| POST | `/api/auth/reset-password` | Новый пароль по токену (сессии отзываются) |
 | GET | `/api/organizer/applications` | Список заявок (organizer+) |
 | POST | `/api/organizer/applications/{id}/approve` | Approve + правка ФИО/уровня |
 | POST | `/api/organizer/applications/{id}/reject` | Reject |
+| GET | `/api/clubs` | Публичный список **active** клубов (`id`, `slug`, `name`, `city`, `status`; без `settings`) |
+| GET | `/api/clubs/{slug}` | Публичная карточка active клуба (тот же контракт) |
+| GET | `/api/auth/me/clubs` | Клубы текущего пользователя (memberships) |
+| POST | `/api/organizer/clubs` | Онбординг клуба: seed pages + rating_config + owner membership |
+| GET | `/api/organizer/club` | Текущий клуб (tenant) + безопасные `settings` |
+| PATCH | `/api/organizer/club` | Обновить `name` / `city` / безопасные `settings` |
+| GET | `/api/organizer/members` | Участники текущего клуба (`X-Club-Slug`) |
+| POST | `/api/organizer/members` | Добавить/обновить по email + role (`owner`/`organizer`/`player`) |
+| PATCH | `/api/organizer/members/{id}` | Сменить role/status участника |
+| GET | `/api/tournaments` | Публичный список клуба (без draft; `X-Club-Slug` / `?club=` / `DEFAULT_CLUB_SLUG`) |
+| GET | `/api/tournaments/{slug}` | Карточка + заявки |
+| POST | `/api/tournaments/{slug}/registrations` | Заявка (approved) |
+| DELETE | `/api/tournaments/{slug}/registrations/me` | Отмена своей заявки |
+| GET | `/api/organizer/tournaments` | Все турниры (organizer+) |
+| POST | `/api/organizer/tournaments` | Создать турнир + rule v1 |
+| GET | `/api/organizer/tournaments/{id}` | Карточка организатора |
+| PATCH | `/api/organizer/tournaments/{id}` | Редактировать / сменить статус |
+| GET | `/api/tournaments/{slug}/bracket` | Публичная сетка (только published) |
+| GET | `/api/tournaments/{slug}/matches` | Публичные матчи турнира |
+| GET | `/api/organizer/tournaments/{id}/bracket` | Сетка организатора (draft/published) |
+| POST | `/api/organizer/tournaments/{id}/bracket/generate` | Генерация из confirmed |
+| POST | `/api/organizer/tournaments/{id}/bracket/publish` | Публикация сетки |
+| GET | `/api/organizer/tournaments/{id}/matches` | Матчи турнира |
+| GET | `/api/organizer/matches` | Все матчи (кроме bye) |
+| PATCH | `/api/organizer/matches/{id}` | Расписание / корт / live |
+| POST | `/api/organizer/matches/{id}/score` | Счёт по сетам + advance |
+| POST | `/api/organizer/matches/{id}/walkover` | Техническая победа |
+| POST | `/api/organizer/matches/{id}/retire` | Снятие по ходу (Elo K×0.5) |
+| POST | `/api/organizer/matches/{id}/disqualify` | Дисквалификация (0 очков / полное Elo) |
+| POST | `/api/organizer/matches/{id}/cancel` | Отмена матча |
+| GET | `/api/players` | Публичный список игроков (`category`, `q`, `limit`, `offset`) |
+| GET | `/api/players/{slug}` | Публичный профиль |
+| GET | `/api/players/{slug}/rating-events` | История рейтинга |
+| GET | `/api/rankings` | Таблица (`season`, `category`; live или snapshot) |
+| GET | `/api/organizer/players` | Игроки для организатора |
+| PATCH | `/api/organizer/players/{id}` | Правка профиля/категории/статуса |
+| POST | `/api/organizer/ratings/manual` | Ручная корректировка (с причиной) |
+| POST | `/api/organizer/ratings/snapshot` | Снимок таблицы `rankings` |
+| POST | `/api/organizer/tournaments/{id}/ratings/apply` | Начисление очков за турнир |
+| GET | `/api/news` | Публичные новости (`tag`, `limit`, `offset`) |
+| GET | `/api/news/{slug}` | Карточка новости |
+| GET | `/api/events` | Публичные события (`kind`, `limit`, `offset`) |
+| GET | `/api/events/{slug}` | Карточка события |
+| GET | `/api/pages` | Список статических страниц |
+| GET | `/api/pages/{slug}` | Страница (club/contacts/rules…) |
+| GET | `/api/organizer/news` | Все новости (вкл. draft) |
+| POST | `/api/organizer/news` | Создать новость |
+| PATCH | `/api/organizer/news/{id}` | Редактировать / publish/archive |
+| GET | `/api/organizer/events` | Все события |
+| POST | `/api/organizer/events` | Создать событие |
+| PATCH | `/api/organizer/events/{id}` | Редактировать событие |
+| PUT | `/api/organizer/pages/{slug}` | Upsert markdown-страницы |
+| POST | `/api/organizer/files` | Upload image (multipart `file`) → metadata + `/api/files/{id}` |
+| GET | `/api/files/{id}` | Отдать файл (`?meta=1` — JSON) |
+| POST | `/api/organizer/tournaments/{id}/cover` | Upload + привязка обложки турнира |
+| POST | `/api/organizer/news/{id}/cover` | Upload + обложка новости |
+| POST | `/api/organizer/events/{id}/cover` | Upload + обложка события |
+| POST | `/api/organizer/players/{id}/avatar` | Upload + аватар игрока |
+
+Вместимость: `SELECT … FOR UPDATE` на турнир в одной транзакции; overflow → waitlist;
+отмена confirmed/pending продвигает очередь.
+
+Сетки: генерация только из `confirmed` (не waitlist). Повторная генерация запрещена,
+если есть матчи со статусом `completed`/`walkover`. Публикация draft→published.
+Счёт и walkover в одной транзакции с переносом победителя в `next_match`
+(и проигравшего в матч за 3-е место при olympic+third_place). Оптимистичная
+блокировка по `version`. Форматы: olympic, round_robin, groups_playoff,
+double_elimination (порт `src/lib/bracket.ts`).
+
+Рейтинг (этап 6): коэффициенты v1 из `docs/RATING.md` в `rating_configs`
+(сезон 2026). Elo пишется в той же TX, что и счёт/walkover/retire (walkover Elo не
+двигает; retire — K×`retire_elo_factor`). Очки турнира начисляются при `completed`
+(и вручную через `ratings/apply`, идемпотентно).
+Посев сетки `seeding=rating` читает `profiles.rating`. Снимок таблицы —
+`POST /api/organizer/ratings/snapshot`.
 
 Сессия: 32 random bytes в cookie `mpl_session` (prod: `__Host-mpl_session`),
 HttpOnly + SameSite=Lax + Secure(prod); в БД только SHA-256(token).
+
+### Uploads
+
+Локальный диск (`UPLOADS_DIR`, по умолчанию `./data/uploads`). Допустимы JPEG/PNG/GIF/WebP,
+лимит `MAX_UPLOAD_BYTES` (5 MiB). В БД — таблица `files` (checksum SHA-256, mime, size);
+`cover_url` / `avatar_url` получают `/api/files/{id}`. Compose volume: `uploads`.
+
+```bash
+curl -sS -b cookies.txt -F file=@cover.jpg \
+  http://127.0.0.1:3020/api/organizer/files
+```
+
+### Nightly rankings snapshot
+
+По `docs/RATING.md` — пересчёт окна 52 недель + снимок `rankings` (по умолчанию
+**03:30 Europe/Moscow**). Идемпотентно раз в локальные сутки.
+
+```bash
+# one-shot (удобно из cron на хосте)
+RANKING_SNAPSHOT_ONCE=1 go run ./cmd/rankingsnapshot
+
+# long-running loop
+go run ./cmd/rankingsnapshot
+
+# compose
+docker compose --profile jobs up -d rankingsnapshot
+```
+
+`RANKING_SNAPSHOT_FORCE=1` — пересчитать даже если снимок за сегодня уже есть.
+Ручной вызов организатора: `POST /api/organizer/ratings/snapshot` (без окна очков).
+
+### Mail worker (SMTP)
+
+Письма всегда сначала попадают в `email_outbox`. Доставка — отдельный процесс:
+
+```bash
+# локально (нужны SMTP_* в env)
+go run ./cmd/mailworker
+
+# compose profile (не стартует без SMTP_HOST/SMTP_FROM)
+docker compose --profile smtp up -d mailworker
+```
+
+Шаблоны: `confirm_email`, `registration_received`, `application_approved`,
+`application_rejected`, `password_reset`, `tournament_registration_confirmed`,
+`tournament_registration_rejected`, `tournament_registration_waitlist`.
+Без SMTP очередь копится, API не падает.
+Повторные попытки с backoff; после `MAIL` max attempts статус `failed`.
 
 ### Seed организатора
 
@@ -101,11 +230,19 @@ go test ./...
 ```text
 cmd/api/           HTTP API
 cmd/seed/          CLI seed approved organizer
+cmd/mailworker/    SMTP drain of email_outbox
+cmd/rankingsnapshot nightly points window + rankings snapshot
 internal/auth/     сессии, rate limit, уровни
 internal/config/   env
 internal/crypto/   random, SHA-256 токенов, Argon2id, AES-GCM
-internal/http/     router, auth, organizer
-internal/mail/     email_outbox enqueue
+internal/http/     router, auth, organizer, tournaments, matches, players, ratings, content
+internal/tournaments  slug + registration capacity
+internal/bracket/  pure draw generation (olympic/RR/groups/DE)
+internal/matches/  generate/publish/score/advance (+ Elo hook)
+internal/rating/   формула очков/Elo, slug игрока, apply/snapshot
+internal/content/  reading time для новостей
+internal/files/    disk store, MIME allow-list, path safety
+internal/mail/     outbox enqueue, templates, SMTP sender, worker
 internal/db/       pgx pool + sqlc
 migrations/        goose
 sql/               schema + queries для sqlc
