@@ -22,6 +22,21 @@ func (q *Queries) ClubSlugExists(ctx context.Context, slug string) (bool, error)
 	return exists, err
 }
 
+const countActiveClubOwners = `-- name: CountActiveClubOwners :one
+SELECT COUNT(*)::int AS count
+FROM club_memberships
+WHERE club_id = $1
+  AND role = 'owner'
+  AND status = 'active'
+`
+
+func (q *Queries) CountActiveClubOwners(ctx context.Context, clubID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countActiveClubOwners, clubID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createClub = `-- name: CreateClub :one
 INSERT INTO clubs (slug, name, city, status, settings)
 VALUES ($1, $2, $3, $4, $5)

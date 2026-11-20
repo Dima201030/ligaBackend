@@ -123,6 +123,7 @@ func NewWithOptions(opts Options) *Server {
 		r.Get("/members", s.handleListClubMembers)
 		r.Post("/members", s.handleAddClubMember)
 		r.Patch("/members/{id}", s.handlePatchClubMember)
+		r.Delete("/members/{id}", s.handleDeleteClubMember)
 		r.Get("/applications", s.handleListApplications)
 		r.Post("/applications/{id}/approve", s.handleApproveApplication)
 		r.Post("/applications/{id}/reject", s.handleRejectApplication)

@@ -153,6 +153,89 @@ func TestClubMembersInviteListAndPatch(t *testing.T) {
 	if forbidRec.Code != http.StatusForbidden {
 		t.Fatalf("owner assign want 403, got %d %s", forbidRec.Code, forbidRec.Body.String())
 	}
+
+	// DELETE active player → left
+	delReq := httptest.NewRequest(http.MethodDelete, "/api/organizer/members/"+memberID, nil)
+	delReq.Header.Set("X-Club-Slug", clubSlug)
+	delReq = delReq.WithContext(auth.SetUser(delReq.Context(), &auth.SessionUser{
+		ID: owner.ID, Email: ownerEmail, Role: owner.Role, Status: owner.Status,
+	}))
+	delRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(delRec, delReq)
+	if delRec.Code != http.StatusOK {
+		t.Fatalf("delete player=%d body=%s", delRec.Code, delRec.Body.String())
+	}
+	var deleted struct {
+		Member map[string]any `json:"member"`
+	}
+	if err := json.Unmarshal(delRec.Body.Bytes(), &deleted); err != nil {
+		t.Fatal(err)
+	}
+	if deleted.Member["status"] != "left" {
+		t.Fatalf("want left, got %v", deleted.Member["status"])
+	}
+
+	// organizer cannot DELETE owner
+	ownerRows, err := store.Queries.ListClubMembers(ctx, sqlc.ListClubMembersParams{
+		ClubID: club.ID, Status: pgtype.Text{}, LimitCount: 20, OffsetCount: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ownerMembershipID string
+	for _, row := range ownerRows {
+		if uuidString(row.UserID) == uuidString(owner.ID) {
+			ownerMembershipID = uuidString(row.ID)
+			break
+		}
+	}
+	if ownerMembershipID == "" {
+		t.Fatal("owner membership missing")
+	}
+	orgDelReq := httptest.NewRequest(http.MethodDelete, "/api/organizer/members/"+ownerMembershipID, nil)
+	orgDelReq.Header.Set("X-Club-Slug", clubSlug)
+	orgDelReq = orgDelReq.WithContext(auth.SetUser(orgDelReq.Context(), &auth.SessionUser{
+		ID: orgActor.ID, Email: emailString(orgActor.Email), Role: orgActor.Role, Status: orgActor.Status,
+	}))
+	orgDelRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(orgDelRec, orgDelReq)
+	if orgDelRec.Code != http.StatusForbidden {
+		t.Fatalf("organizer delete owner want 403, got %d %s", orgDelRec.Code, orgDelRec.Body.String())
+	}
+
+	// last active owner cannot be deleted
+	lastDelReq := httptest.NewRequest(http.MethodDelete, "/api/organizer/members/"+ownerMembershipID, nil)
+	lastDelReq.Header.Set("X-Club-Slug", clubSlug)
+	lastDelReq = lastDelReq.WithContext(auth.SetUser(lastDelReq.Context(), &auth.SessionUser{
+		ID: owner.ID, Email: ownerEmail, Role: owner.Role, Status: owner.Status,
+	}))
+	lastDelRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(lastDelRec, lastDelReq)
+	if lastDelRec.Code != http.StatusConflict {
+		t.Fatalf("last owner delete want 409, got %d %s", lastDelRec.Code, lastDelRec.Body.String())
+	}
+
+	// second owner can remove the first
+	owner2 := createMemberUser(t, store, "owner2-"+itoaMem(suffix)+"@example.com", sqlc.UserRoleOrganizer)
+	t.Cleanup(func() {
+		_, _ = store.Pool.Exec(context.Background(), `DELETE FROM profiles WHERE user_id=$1`, owner2.ID)
+		_, _ = store.Pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, owner2.ID)
+	})
+	if _, err := store.Queries.CreateClubMembership(ctx, sqlc.CreateClubMembershipParams{
+		ClubID: club.ID, UserID: owner2.ID, Role: sqlc.ClubMemberRoleOwner, Status: sqlc.ClubMemberStatusActive,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	okDelReq := httptest.NewRequest(http.MethodDelete, "/api/organizer/members/"+ownerMembershipID, nil)
+	okDelReq.Header.Set("X-Club-Slug", clubSlug)
+	okDelReq = okDelReq.WithContext(auth.SetUser(okDelReq.Context(), &auth.SessionUser{
+		ID: owner2.ID, Email: emailString(owner2.Email), Role: owner2.Role, Status: owner2.Status,
+	}))
+	okDelRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(okDelRec, okDelReq)
+	if okDelRec.Code != http.StatusOK {
+		t.Fatalf("delete owner with peer=%d body=%s", okDelRec.Code, okDelRec.Body.String())
+	}
 }
 
 func createMemberUser(t *testing.T, store *db.Store, email string, role sqlc.UserRole) sqlc.User {
