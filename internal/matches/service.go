@@ -578,17 +578,23 @@ func finishMatch(ctx context.Context, store *db.Store, in finishParams) (FinishO
 		}
 		return FinishOutcome{}, err
 	}
+	correcting := false
 	switch match.Status {
 	case sqlc.MatchStatusScheduled, sqlc.MatchStatusLive:
-		// playable
+		// first finish
 	case sqlc.MatchStatusCompleted, sqlc.MatchStatusWalkover, sqlc.MatchStatusDisqualified:
-		// Another writer already finished — treat as optimistic conflict.
-		return FinishOutcome{}, ErrConflict
+		// Allow score correction while the next-round match is still open.
+		correcting = true
 	default:
 		return FinishOutcome{}, ErrMatchNotPlayable
 	}
 	if match.Version != in.Version {
 		return FinishOutcome{}, ErrConflict
+	}
+	if correcting {
+		if err := assertDownstreamEditable(ctx, q, match); err != nil {
+			return FinishOutcome{}, err
+		}
 	}
 
 	sides, err := q.ListMatchSidesByMatchIDs(ctx, []pgtype.UUID{match.ID})
@@ -636,8 +642,11 @@ func finishMatch(ctx context.Context, store *db.Store, in finishParams) (FinishO
 		return FinishOutcome{}, err
 	}
 
-	if err := applyMatchRating(ctx, q, match, side1, side2, in); err != nil {
-		return FinishOutcome{}, err
+	// Elo is idempotent per (match, player); corrections keep existing rating events.
+	if !correcting {
+		if err := applyMatchRating(ctx, q, match, side1, side2, in); err != nil {
+			return FinishOutcome{}, err
+		}
 	}
 
 	out := FinishOutcome{Match: updated}
@@ -645,23 +654,25 @@ func finishMatch(ctx context.Context, store *db.Store, in finishParams) (FinishO
 	if err != nil {
 		return FinishOutcome{}, err
 	}
-	shouldComplete, err := shouldCompleteAfterFinish(ctx, q, match, tour.Format)
-	if err != nil {
-		return FinishOutcome{}, err
-	}
-	if shouldComplete {
-		res, err := maybeCompleteAndAward(ctx, q, match.TournamentID, in.ActorID)
+	if !correcting {
+		shouldComplete, err := shouldCompleteAfterFinish(ctx, q, match, tour.Format)
 		if err != nil {
 			return FinishOutcome{}, err
 		}
-		out.TournamentCompleted = res.completed
-		out.RatingsApplied = res.ratingsApplied
-	} else {
-		live, err := maybeMarkLive(ctx, q, match.TournamentID)
-		if err != nil {
-			return FinishOutcome{}, err
+		if shouldComplete {
+			res, err := maybeCompleteAndAward(ctx, q, match.TournamentID, in.ActorID)
+			if err != nil {
+				return FinishOutcome{}, err
+			}
+			out.TournamentCompleted = res.completed
+			out.RatingsApplied = res.ratingsApplied
+		} else {
+			live, err := maybeMarkLive(ctx, q, match.TournamentID)
+			if err != nil {
+				return FinishOutcome{}, err
+			}
+			out.TournamentWentLive = live
 		}
-		out.TournamentWentLive = live
 	}
 
 	diff := in.AuditDiff
@@ -811,6 +822,32 @@ func applyMatchRating(ctx context.Context, q *sqlc.Queries, match sqlc.Match, si
 		Disqualify:   in.Status == sqlc.MatchStatusDisqualified,
 		ActorID:      in.ActorID,
 	})
+}
+
+// assertDownstreamEditable refuses corrections once a fed next-round match already has a result.
+func assertDownstreamEditable(ctx context.Context, q *sqlc.Queries, match sqlc.Match) error {
+	check := func(id pgtype.UUID) error {
+		if !id.Valid {
+			return nil
+		}
+		next, err := q.GetMatchByID(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil
+			}
+			return err
+		}
+		switch next.Status {
+		case sqlc.MatchStatusCompleted, sqlc.MatchStatusWalkover, sqlc.MatchStatusDisqualified, sqlc.MatchStatusCancelled:
+			return ErrConflict
+		default:
+			return nil
+		}
+	}
+	if err := check(match.NextMatchID); err != nil {
+		return err
+	}
+	return check(match.LoserNextMatchID)
 }
 
 func advanceSide(ctx context.Context, q *sqlc.Queries, nextMatchID pgtype.UUID, nextSlot pgtype.Int2, from sqlc.MatchSide) error {

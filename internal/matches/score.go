@@ -18,7 +18,8 @@ type SetScore struct {
 	Side2 int `json:"side2"`
 }
 
-// ValidateAndDecideWinner checks best-of-3 set scores and returns winner side (1|2).
+// ValidateAndDecideWinner checks set scores and returns winner side (1|2).
+// Supports best-of-1 (один сет) and best-of-3 (до двух побед).
 // Accepts regular sets (6-x with margin 2, or 7-5/7-6) and a deciding match TB (to 10).
 func ValidateAndDecideWinner(sets []SetScore) (winner int, text string, err error) {
 	if len(sets) == 0 {
@@ -38,6 +39,7 @@ func ValidateAndDecideWinner(sets []SetScore) (winner int, text string, err erro
 		if set.Side1 == set.Side2 {
 			return 0, "", fmt.Errorf("%w: ничья в сете %d недопустима", ErrInvalidScore, i+1)
 		}
+		// Match TB: deciding 3rd set, or the only set when it is a super TB (to 10).
 		allowMatchTB := i == 2 || (len(sets) == 1 && (set.Side1 >= 10 || set.Side2 >= 10))
 		if !validSet(set, allowMatchTB) {
 			return 0, "", fmt.Errorf("%w: некорректный сет %d (%d:%d)", ErrInvalidScore, i+1, set.Side1, set.Side2)
@@ -49,8 +51,8 @@ func ValidateAndDecideWinner(sets []SetScore) (winner int, text string, err erro
 		}
 		parts = append(parts, fmt.Sprintf("%d:%d", set.Side1, set.Side2))
 
-		// Match already decided — no extra sets.
-		if (wins1 >= 2 || wins2 >= 2) && i < len(sets)-1 {
+		// Best-of-3 already decided — no extra sets.
+		if len(sets) > 1 && (wins1 >= 2 || wins2 >= 2) && i < len(sets)-1 {
 			return 0, "", fmt.Errorf("%w: лишние сеты после победы", ErrInvalidScore)
 		}
 	}
@@ -58,14 +60,21 @@ func ValidateAndDecideWinner(sets []SetScore) (winner int, text string, err erro
 	if wins1 == wins2 {
 		return 0, "", fmt.Errorf("%w: матч не завершён — равное число сетов", ErrInvalidScore)
 	}
-	if wins1 < 2 && wins2 < 2 && len(sets) < 3 {
-		// Allow 2-0, or incomplete only if someone already has 2 — covered above.
-		// Best of 3 can end 2-0 or 2-1.
+
+	// Best-of-1: ровно один сет — победитель этого сета выигрывает матч.
+	if len(sets) == 1 {
+		winner = 1
+		if wins2 > wins1 {
+			winner = 2
+		}
+		return winner, strings.Join(parts, ", "), nil
+	}
+
+	// Best-of-3: нужно 2 выигранных сета (2:0 или 2:1).
+	if wins1 < 2 && wins2 < 2 {
 		if wins1+wins2 < 2 {
 			return 0, "", fmt.Errorf("%w: недостаточно сетов", ErrInvalidScore)
 		}
-	}
-	if wins1 < 2 && wins2 < 2 {
 		return 0, "", fmt.Errorf("%w: для победы нужно выиграть 2 сета", ErrInvalidScore)
 	}
 

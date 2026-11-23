@@ -33,12 +33,25 @@ func TestValidateScoreThreeSets(t *testing.T) {
 	}
 }
 
-func TestValidateScoreRejectsIncomplete(t *testing.T) {
-	_, _, err := matches.ValidateAndDecideWinner([]matches.SetScore{
+func TestValidateScoreBestOfOne(t *testing.T) {
+	winner, text, err := matches.ValidateAndDecideWinner([]matches.SetScore{
 		{Side1: 6, Side2: 4},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if winner != 1 || text != "6:4" {
+		t.Fatalf("winner=%d text=%q", winner, text)
+	}
+}
+
+func TestValidateScoreRejectsOneSetEach(t *testing.T) {
+	_, _, err := matches.ValidateAndDecideWinner([]matches.SetScore{
+		{Side1: 6, Side2: 4},
+		{Side1: 3, Side2: 6},
+	})
 	if err == nil {
-		t.Fatal("expected error")
+		t.Fatal("expected error for unfinished best-of-3")
 	}
 }
 

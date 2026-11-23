@@ -900,7 +900,7 @@ SET status = $2,
     updated_at = now()
 WHERE id = $1
   AND version = $6
-  AND status IN ('scheduled', 'live')
+  AND status IN ('scheduled', 'live', 'completed', 'walkover', 'disqualified')
 RETURNING id, tournament_id, bracket_key, stage, round_index, position, round_label, scheduled_at, court, status, score_sets, score_text, winner_side, next_match_id, next_slot, loser_next_match_id, loser_next_slot, is_bye, version, created_at, updated_at
 `
 

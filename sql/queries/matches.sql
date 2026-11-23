@@ -156,6 +156,8 @@ WHERE match_id = $1 AND side = $2
 RETURNING *;
 
 -- name: SubmitMatchResult :one
+-- First finish: scheduled/live. Correction: completed/walkover/disqualified with matching version
+-- (service layer refuses if the next-round match already has a result).
 UPDATE matches
 SET status = $2,
     score_sets = $3,
@@ -165,7 +167,7 @@ SET status = $2,
     updated_at = now()
 WHERE id = $1
   AND version = $6
-  AND status IN ('scheduled', 'live')
+  AND status IN ('scheduled', 'live', 'completed', 'walkover', 'disqualified')
 RETURNING *;
 
 -- name: CancelMatch :one

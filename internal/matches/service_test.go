@@ -579,15 +579,30 @@ func TestFinalScoreCompletesTournamentAndAwards(t *testing.T) {
 		}
 	}
 
-	// Third-place / non-final must not re-complete (idempotent path): already completed.
-	outcome2, err := matches.Walkover(ctx, store, matches.WalkoverInput{
+	// Stale version on correction must still conflict.
+	_, err = matches.Walkover(ctx, store, matches.WalkoverInput{
 		MatchID:    final.ID,
 		WinnerSide: 1,
-		Version:    outcome.Match.Version,
+		Version:    outcome.Match.Version - 1,
 		ActorID:    actor,
 	})
 	if err != matches.ErrConflict {
-		t.Fatalf("re-finish expected conflict, got %v outcome=%+v", err, outcome2)
+		t.Fatalf("stale version expected conflict, got %v", err)
+	}
+
+	// Matching version may correct a finished match while the next round is still open
+	// (final has no next match — correction is allowed).
+	outcome2, err := matches.Walkover(ctx, store, matches.WalkoverInput{
+		MatchID:    final.ID,
+		WinnerSide: 2,
+		Version:    outcome.Match.Version,
+		ActorID:    actor,
+	})
+	if err != nil {
+		t.Fatalf("correction walkover: %v", err)
+	}
+	if !outcome2.Match.WinnerSide.Valid || outcome2.Match.WinnerSide.Int16 != 2 {
+		t.Fatalf("corrected winner=%v", outcome2.Match.WinnerSide)
 	}
 }
 
