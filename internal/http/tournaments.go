@@ -55,6 +55,12 @@ type createRegistrationRequest struct {
 	LookingForPartner bool    `json:"looking_for_partner"`
 }
 
+type organizerAddRegistrationRequest struct {
+	PlayerID          string  `json:"player_id"`
+	PartnerID         *string `json:"partner_id"`
+	LookingForPartner bool    `json:"looking_for_partner"`
+}
+
 type updateRegistrationStatusRequest struct {
 	Status string `json:"status"`
 }
@@ -222,6 +228,117 @@ func (s *Server) handleGetOrganizerTournament(w http.ResponseWriter, r *http.Req
 			"waitlist":  waitlist,
 		},
 	})
+}
+
+func (s *Server) handleOrganizerAddRegistration(w http.ResponseWriter, r *http.Request) {
+	tournamentID, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор турнира")
+		return
+	}
+	tour, err := s.loadClubTournament(r, tournamentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турнир")
+		return
+	}
+
+	var req organizerAddRegistrationRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Некорректное тело запроса")
+		return
+	}
+	playerID, err := parseUUID(strings.TrimSpace(req.PlayerID))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation", "Укажите игрока")
+		return
+	}
+
+	ctx := r.Context()
+	clubID := s.currentClubID(r)
+	membership, err := s.store.Queries.GetClubMembership(ctx, sqlc.GetClubMembershipParams{
+		ClubID: clubID,
+		UserID: playerID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "player_not_found", "Игрок не найден в клубе")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось добавить участника")
+		return
+	}
+	if membership.Status != sqlc.ClubMemberStatusActive {
+		writeError(w, http.StatusConflict, "player_inactive", "Игрок не состоит в клубе как активный участник")
+		return
+	}
+
+	user, err := s.store.Queries.GetUserByID(ctx, playerID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "player_not_found", "Игрок не найден")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось добавить участника")
+		return
+	}
+	if user.Status != sqlc.UserStatusApproved {
+		writeError(w, http.StatusConflict, "player_not_approved", "Можно добавить только подтверждённого игрока или заготовку")
+		return
+	}
+	if user.Role != sqlc.UserRolePlayer && user.Role != sqlc.UserRoleOrganizer {
+		writeError(w, http.StatusConflict, "player_role", "В турнир можно добавить только игрока")
+		return
+	}
+
+	lookingForPartner := req.LookingForPartner
+	var partnerID pgtype.UUID
+	if req.PartnerID != nil && strings.TrimSpace(*req.PartnerID) != "" {
+		partnerID, err = parseUUID(strings.TrimSpace(*req.PartnerID))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор партнёра")
+			return
+		}
+	} else if tournaments.IsPairType(tour.Type) && !lookingForPartner {
+		// Organizer singles-path helper for pair events: seat as looking for partner.
+		lookingForPartner = true
+	}
+
+	reg, err := tournaments.CreateRegistration(ctx, s.store, tournaments.CreateRegistrationInput{
+		TournamentID:      tour.ID,
+		PlayerID:          playerID,
+		PartnerID:         partnerID,
+		LookingForPartner: lookingForPartner,
+		SkipOpenCheck:     true,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, tournaments.ErrRegistrationClosed):
+			writeError(w, http.StatusConflict, "registration_closed", "Нельзя добавить участника в завершённый турнир")
+		case errors.Is(err, tournaments.ErrAlreadyRegistered):
+			writeError(w, http.StatusConflict, "already_registered", "Игрок уже заявлен на этот турнир")
+		case errors.Is(err, tournaments.ErrSelfPartner):
+			writeError(w, http.StatusBadRequest, "validation", "Нельзя указать себя в качестве партнёра")
+		case errors.Is(err, tournaments.ErrPartnerRequired):
+			writeError(w, http.StatusBadRequest, "validation", "Для парного турнира укажите партнёра или отметьте «ищу партнёра»")
+		case errors.Is(err, tournaments.ErrPartnerNotFound):
+			writeError(w, http.StatusBadRequest, "validation", "Партнёр не найден или не подтверждён")
+		case errors.Is(err, tournaments.ErrPartnerBusy):
+			writeError(w, http.StatusConflict, "partner_busy", "Партнёр уже заявлен на этот турнир")
+		case errors.Is(err, tournaments.ErrInvalidPairFlags):
+			writeError(w, http.StatusBadRequest, "validation", "Некорректные параметры парной заявки")
+		case errors.Is(err, tournaments.ErrTournamentNotFound):
+			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
+		default:
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось добавить участника")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"registration": registrationFromModel(reg)})
 }
 
 func (s *Server) handleUpdateOrganizerRegistrationStatus(w http.ResponseWriter, r *http.Request) {

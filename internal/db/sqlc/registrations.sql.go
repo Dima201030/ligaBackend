@@ -639,6 +639,58 @@ func (q *Queries) PromoteRegistration(ctx context.Context, id pgtype.UUID) (Regi
 	return i, err
 }
 
+const reactivateRegistration = `-- name: ReactivateRegistration :one
+UPDATE registrations
+SET partner_id = $3,
+    looking_for_partner = $4,
+    status = $5,
+    waitlist_position = $6,
+    confirmed_at = $7,
+    cancelled_at = NULL,
+    seed = NULL
+WHERE tournament_id = $1
+  AND player_id = $2
+  AND status IN ('cancelled', 'rejected')
+RETURNING id, tournament_id, player_id, partner_id, looking_for_partner, status, seed, waitlist_position, created_at, confirmed_at, cancelled_at
+`
+
+type ReactivateRegistrationParams struct {
+	TournamentID      pgtype.UUID
+	PlayerID          pgtype.UUID
+	PartnerID         pgtype.UUID
+	LookingForPartner bool
+	Status            RegistrationStatus
+	WaitlistPosition  pgtype.Int4
+	ConfirmedAt       pgtype.Timestamptz
+}
+
+func (q *Queries) ReactivateRegistration(ctx context.Context, arg ReactivateRegistrationParams) (Registration, error) {
+	row := q.db.QueryRow(ctx, reactivateRegistration,
+		arg.TournamentID,
+		arg.PlayerID,
+		arg.PartnerID,
+		arg.LookingForPartner,
+		arg.Status,
+		arg.WaitlistPosition,
+		arg.ConfirmedAt,
+	)
+	var i Registration
+	err := row.Scan(
+		&i.ID,
+		&i.TournamentID,
+		&i.PlayerID,
+		&i.PartnerID,
+		&i.LookingForPartner,
+		&i.Status,
+		&i.Seed,
+		&i.WaitlistPosition,
+		&i.CreatedAt,
+		&i.ConfirmedAt,
+		&i.CancelledAt,
+	)
+	return i, err
+}
+
 const setRegistrationStatus = `-- name: SetRegistrationStatus :one
 UPDATE registrations
 SET status = $2,
