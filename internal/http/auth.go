@@ -95,7 +95,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	q := s.store.Queries.WithTx(tx)
 
 	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{
-		Email:        email,
+		Email:        textEmail(email),
 		PasswordHash: hash,
 		FirstName:    firstName,
 		LastName:     lastName,
@@ -190,7 +190,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	user, err := s.store.Queries.GetUserByEmail(ctx, email)
+	user, err := s.store.Queries.GetUserByEmail(ctx, textEmail(email))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusUnauthorized, "invalid_credentials", "Неверный email или пароль")
@@ -332,7 +332,7 @@ func (s *Server) handleConfirmEmail(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":    true,
-		"email": user.Email,
+		"email": emailString(user.Email),
 	})
 }
 

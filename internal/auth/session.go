@@ -108,9 +108,13 @@ func LoadSessionUser(ctx context.Context, store *db.Store, token string) (*Sessi
 		p := profile.Phone.String
 		phone = &p
 	}
+	email := ""
+	if user.Email.Valid {
+		email = user.Email.String
+	}
 	return &SessionUser{
 		ID:              user.ID,
-		Email:           user.Email,
+		Email:           email,
 		FirstName:       user.FirstName,
 		LastName:        user.LastName,
 		Role:            user.Role,

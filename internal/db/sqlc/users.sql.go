@@ -46,6 +46,99 @@ func (q *Queries) ApproveUser(ctx context.Context, arg ApproveUserParams) (User,
 	return i, err
 }
 
+const claimPlaceholderFromUser = `-- name: ClaimPlaceholderFromUser :one
+UPDATE users
+SET email = $1,
+    password_hash = $2,
+    email_verified_at = $3,
+    first_name = $4,
+    last_name = $5,
+    status = 'approved',
+    updated_at = now()
+WHERE id = $6
+  AND email IS NULL
+RETURNING id, email, password_hash, first_name, last_name, role, status,
+          email_verified_at, created_at, updated_at
+`
+
+type ClaimPlaceholderFromUserParams struct {
+	Email           pgtype.Text
+	PasswordHash    string
+	EmailVerifiedAt pgtype.Timestamptz
+	FirstName       string
+	LastName        string
+	ID              pgtype.UUID
+}
+
+// Absorb credentials from a real account onto a placeholder (email IS NULL).
+func (q *Queries) ClaimPlaceholderFromUser(ctx context.Context, arg ClaimPlaceholderFromUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, claimPlaceholderFromUser,
+		arg.Email,
+		arg.PasswordHash,
+		arg.EmailVerifiedAt,
+		arg.FirstName,
+		arg.LastName,
+		arg.ID,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.FirstName,
+		&i.LastName,
+		&i.Role,
+		&i.Status,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createPlaceholderUser = `-- name: CreatePlaceholderUser :one
+INSERT INTO users (
+    email, password_hash, first_name, last_name, role, status
+) VALUES (
+    NULL, $1, $2, $3, $4, $5
+)
+RETURNING id, email, password_hash, first_name, last_name, role, status,
+          email_verified_at, created_at, updated_at
+`
+
+type CreatePlaceholderUserParams struct {
+	PasswordHash string
+	FirstName    string
+	LastName     string
+	Role         UserRole
+	Status       UserStatus
+}
+
+// Organizer-created player without email/login; claim later via manual merge.
+func (q *Queries) CreatePlaceholderUser(ctx context.Context, arg CreatePlaceholderUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, createPlaceholderUser,
+		arg.PasswordHash,
+		arg.FirstName,
+		arg.LastName,
+		arg.Role,
+		arg.Status,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.FirstName,
+		&i.LastName,
+		&i.Role,
+		&i.Status,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (
     email, password_hash, first_name, last_name, role, status
@@ -57,7 +150,7 @@ RETURNING id, email, password_hash, first_name, last_name, role, status,
 `
 
 type CreateUserParams struct {
-	Email        string
+	Email        pgtype.Text
 	PasswordHash string
 	FirstName    string
 	LastName     string
@@ -101,7 +194,7 @@ RETURNING id, email, password_hash, first_name, last_name, role, status,
 `
 
 type CreateUserVerifiedParams struct {
-	Email        string
+	Email        pgtype.Text
 	PasswordHash string
 	FirstName    string
 	LastName     string
@@ -134,6 +227,15 @@ func (q *Queries) CreateUserVerified(ctx context.Context, arg CreateUserVerified
 	return i, err
 }
 
+const deleteUserByID = `-- name: DeleteUserByID :exec
+DELETE FROM users WHERE id = $1
+`
+
+func (q *Queries) DeleteUserByID(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserByID, id)
+	return err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, email, password_hash, first_name, last_name, role, status,
        email_verified_at, created_at, updated_at
@@ -141,7 +243,7 @@ FROM users
 WHERE email = $1
 `
 
-func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
+func (q *Queries) GetUserByEmail(ctx context.Context, email pgtype.Text) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByEmail, email)
 	var i User
 	err := row.Scan(
@@ -201,6 +303,7 @@ FROM users u
 JOIN profiles p ON p.user_id = u.id
 WHERE p.club_id = $1
   AND u.role = 'player'
+  AND u.email IS NOT NULL
 ORDER BY
     CASE u.status WHEN 'pending' THEN 0 ELSE 1 END,
     u.created_at DESC
@@ -208,7 +311,7 @@ ORDER BY
 
 type ListApplicationsRow struct {
 	ID              pgtype.UUID
-	Email           string
+	Email           pgtype.Text
 	FirstName       string
 	LastName        string
 	Role            UserRole
@@ -241,6 +344,79 @@ func (q *Queries) ListApplications(ctx context.Context, clubID pgtype.UUID) ([]L
 			&i.UpdatedAt,
 			&i.Phone,
 			&i.Level,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlaceholderPlayers = `-- name: ListPlaceholderPlayers :many
+SELECT
+    u.id,
+    u.email,
+    u.first_name,
+    u.last_name,
+    u.role,
+    u.status AS user_status,
+    p.slug,
+    p.level,
+    p.phone,
+    p.verification_status,
+    p.rating,
+    p.points,
+    p.created_at
+FROM profiles p
+JOIN users u ON u.id = p.user_id
+WHERE p.club_id = $1
+  AND u.email IS NULL
+  AND u.role = 'player'
+ORDER BY u.last_name ASC, u.first_name ASC
+`
+
+type ListPlaceholderPlayersRow struct {
+	ID                 pgtype.UUID
+	Email              pgtype.Text
+	FirstName          string
+	LastName           string
+	Role               UserRole
+	UserStatus         UserStatus
+	Slug               string
+	Level              string
+	Phone              pgtype.Text
+	VerificationStatus ProfileVerificationStatus
+	Rating             float64
+	Points             int32
+	CreatedAt          pgtype.Timestamptz
+}
+
+func (q *Queries) ListPlaceholderPlayers(ctx context.Context, clubID pgtype.UUID) ([]ListPlaceholderPlayersRow, error) {
+	rows, err := q.db.Query(ctx, listPlaceholderPlayers, clubID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPlaceholderPlayersRow{}
+	for rows.Next() {
+		var i ListPlaceholderPlayersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.FirstName,
+			&i.LastName,
+			&i.Role,
+			&i.UserStatus,
+			&i.Slug,
+			&i.Level,
+			&i.Phone,
+			&i.VerificationStatus,
+			&i.Rating,
+			&i.Points,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

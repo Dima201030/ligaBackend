@@ -41,6 +41,34 @@ SET phone = COALESCE(sqlc.narg(phone), phone),
 WHERE user_id = sqlc.arg(user_id)
 RETURNING *;
 
+-- name: MergeProfileFromSource :one
+-- Keep placeholder non-empty fields; fill blanks from source application profile.
+UPDATE profiles AS dst
+SET phone = COALESCE(NULLIF(dst.phone, ''), src.phone),
+    level = CASE
+        WHEN dst.level IS NULL OR dst.level = '' THEN src.level
+        ELSE dst.level
+    END,
+    birth_date = COALESCE(dst.birth_date, src.birth_date),
+    gender = CASE
+        WHEN dst.gender IS NULL OR dst.gender = '' THEN src.gender
+        ELSE dst.gender
+    END,
+    city = CASE
+        WHEN dst.city IS NULL OR dst.city = '' THEN src.city
+        ELSE dst.city
+    END,
+    bio = CASE
+        WHEN dst.bio IS NULL OR dst.bio = '' THEN src.bio
+        ELSE dst.bio
+    END,
+    avatar_url = COALESCE(dst.avatar_url, src.avatar_url),
+    updated_at = now()
+FROM profiles AS src
+WHERE dst.user_id = sqlc.arg(dst_user_id)
+  AND src.user_id = sqlc.arg(src_user_id)
+RETURNING dst.*;
+
 -- name: UpdateProfileLevelAndNames :exec
 UPDATE profiles
 SET level = $2, updated_at = now()

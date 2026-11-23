@@ -69,6 +69,7 @@ FROM users u
 JOIN profiles p ON p.user_id = u.id
 WHERE p.club_id = $1
   AND u.role = 'player'
+  AND u.email IS NOT NULL
 ORDER BY
     CASE u.status WHEN 'pending' THEN 0 ELSE 1 END,
     u.created_at DESC;
@@ -94,3 +95,53 @@ SET first_name = $2,
 WHERE id = $1
 RETURNING id, email, password_hash, first_name, last_name, role, status,
           email_verified_at, created_at, updated_at;
+
+-- name: CreatePlaceholderUser :one
+-- Organizer-created player without email/login; claim later via manual merge.
+INSERT INTO users (
+    email, password_hash, first_name, last_name, role, status
+) VALUES (
+    NULL, $1, $2, $3, $4, $5
+)
+RETURNING id, email, password_hash, first_name, last_name, role, status,
+          email_verified_at, created_at, updated_at;
+
+-- name: ClaimPlaceholderFromUser :one
+-- Absorb credentials from a real account onto a placeholder (email IS NULL).
+UPDATE users
+SET email = sqlc.arg(email),
+    password_hash = sqlc.arg(password_hash),
+    email_verified_at = sqlc.narg(email_verified_at),
+    first_name = sqlc.arg(first_name),
+    last_name = sqlc.arg(last_name),
+    status = 'approved',
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND email IS NULL
+RETURNING id, email, password_hash, first_name, last_name, role, status,
+          email_verified_at, created_at, updated_at;
+
+-- name: DeleteUserByID :exec
+DELETE FROM users WHERE id = $1;
+
+-- name: ListPlaceholderPlayers :many
+SELECT
+    u.id,
+    u.email,
+    u.first_name,
+    u.last_name,
+    u.role,
+    u.status AS user_status,
+    p.slug,
+    p.level,
+    p.phone,
+    p.verification_status,
+    p.rating,
+    p.points,
+    p.created_at
+FROM profiles p
+JOIN users u ON u.id = p.user_id
+WHERE p.club_id = $1
+  AND u.email IS NULL
+  AND u.role = 'player'
+ORDER BY u.last_name ASC, u.first_name ASC;

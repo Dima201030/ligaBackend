@@ -5,7 +5,8 @@ CREATE TYPE user_status AS ENUM ('pending', 'approved', 'rejected');
 
 CREATE TABLE users (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email           TEXT NOT NULL,
+    -- NULL email = organizer-created placeholder (no login until merged with a real account).
+    email           TEXT,
     password_hash   TEXT NOT NULL,
     first_name      TEXT NOT NULL,
     last_name       TEXT NOT NULL,
@@ -14,10 +15,10 @@ CREATE TABLE users (
     email_verified_at TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT users_email_lower_chk CHECK (email = lower(email))
+    CONSTRAINT users_email_lower_chk CHECK (email IS NULL OR email = lower(email))
 );
 
-CREATE UNIQUE INDEX users_email_uidx ON users (email);
+CREATE UNIQUE INDEX users_email_uidx ON users (email) WHERE email IS NOT NULL;
 
 CREATE TYPE club_status AS ENUM ('active', 'suspended', 'archived');
 CREATE TYPE club_member_role AS ENUM ('player', 'organizer', 'owner');

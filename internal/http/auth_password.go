@@ -53,7 +53,7 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	user, err := s.store.Queries.GetUserByEmail(ctx, email)
+	user, err := s.store.Queries.GetUserByEmail(ctx, textEmail(email))
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusInternalServerError, "internal", "Не удалось обработать запрос")
@@ -111,7 +111,7 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.PublicBaseURL != "" {
 		payload["reset_url"] = s.cfg.PublicBaseURL + "/api/auth/reset-password?token=" + token
 	}
-	_ = mail.Enqueue(ctx, s.store, s.cfg, user.Email, "password_reset", payload)
+	_ = mail.Enqueue(ctx, s.store, s.cfg, emailString(user.Email), "password_reset", payload)
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"ok":      true,
@@ -211,7 +211,7 @@ func (s *Server) handleResendConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	user, err := s.store.Queries.GetUserByEmail(ctx, email)
+	user, err := s.store.Queries.GetUserByEmail(ctx, textEmail(email))
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusInternalServerError, "internal", "Не удалось отправить письмо")
@@ -269,7 +269,7 @@ func (s *Server) handleResendConfirm(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.PublicBaseURL != "" {
 		payload["confirm_url"] = s.cfg.PublicBaseURL + "/api/auth/confirm-email?token=" + token
 	}
-	_ = mail.Enqueue(ctx, s.store, s.cfg, user.Email, "confirm_email", payload)
+	_ = mail.Enqueue(ctx, s.store, s.cfg, emailString(user.Email), "confirm_email", payload)
 
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
 }

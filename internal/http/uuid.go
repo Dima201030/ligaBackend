@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -20,4 +21,19 @@ func parseUUID(s string) (pgtype.UUID, error) {
 		return pgtype.UUID{}, err
 	}
 	return id, nil
+}
+
+func textEmail(s string) pgtype.Text {
+	v := strings.ToLower(strings.TrimSpace(s))
+	if v == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: v, Valid: true}
+}
+
+func emailString(t pgtype.Text) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.String
 }

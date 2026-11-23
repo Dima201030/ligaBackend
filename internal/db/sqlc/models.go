@@ -1097,7 +1097,7 @@ type TournamentRuleVersion struct {
 
 type User struct {
 	ID              pgtype.UUID
-	Email           string
+	Email           pgtype.Text
 	PasswordHash    string
 	FirstName       string
 	LastName        string

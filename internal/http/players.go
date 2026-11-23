@@ -41,6 +41,7 @@ type playerJSON struct {
 	UserStatus           string  `json:"user_status,omitempty"`
 	Role                 string  `json:"role,omitempty"`
 	MemberSince          string  `json:"member_since,omitempty"`
+	IsPlaceholder        bool    `json:"is_placeholder,omitempty"`
 }
 
 func (s *Server) handleListPublicPlayers(w http.ResponseWriter, r *http.Request) {
@@ -255,11 +256,12 @@ func organizerPlayerFromRow(row sqlc.ListOrganizerPlayersRow) playerJSON {
 		Wins:               row.Wins,
 		Losses:             row.Losses,
 		Provisional:        row.MatchesPlayed < 10,
-		Email:              row.Email,
+		Email:              emailString(row.Email),
 		Phone:              textPtr(row.Phone),
-		UserStatus:    string(row.UserStatus),
-		Role:          string(row.Role),
-		MemberSince:   formatTS(row.CreatedAt),
+		UserStatus:         string(row.UserStatus),
+		Role:               string(row.Role),
+		MemberSince:        formatTS(row.CreatedAt),
+		IsPlaceholder:      !row.Email.Valid,
 	}
 }
 

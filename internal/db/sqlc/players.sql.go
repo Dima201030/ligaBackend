@@ -384,7 +384,7 @@ type ListOrganizerPlayersParams struct {
 
 type ListOrganizerPlayersRow struct {
 	ID                 pgtype.UUID
-	Email              string
+	Email              pgtype.Text
 	FirstName          string
 	LastName           string
 	Role               UserRole
@@ -578,6 +578,73 @@ func (q *Queries) ListPublicPlayers(ctx context.Context, arg ListPublicPlayersPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const mergeProfileFromSource = `-- name: MergeProfileFromSource :one
+UPDATE profiles AS dst
+SET phone = COALESCE(NULLIF(dst.phone, ''), src.phone),
+    level = CASE
+        WHEN dst.level IS NULL OR dst.level = '' THEN src.level
+        ELSE dst.level
+    END,
+    birth_date = COALESCE(dst.birth_date, src.birth_date),
+    gender = CASE
+        WHEN dst.gender IS NULL OR dst.gender = '' THEN src.gender
+        ELSE dst.gender
+    END,
+    city = CASE
+        WHEN dst.city IS NULL OR dst.city = '' THEN src.city
+        ELSE dst.city
+    END,
+    bio = CASE
+        WHEN dst.bio IS NULL OR dst.bio = '' THEN src.bio
+        ELSE dst.bio
+    END,
+    avatar_url = COALESCE(dst.avatar_url, src.avatar_url),
+    updated_at = now()
+FROM profiles AS src
+WHERE dst.user_id = $1
+  AND src.user_id = $2
+RETURNING dst.user_id, dst.club_id, dst.phone, dst.level, dst.slug, dst.gender, dst.city, dst.bio, dst.avatar_url, dst.avatar_file_id, dst.player_status, dst.birth_date, dst.verification_status, dst.verified_at, dst.verified_by, dst.verification_note, dst.rating, dst.points, dst.singles_points, dst.doubles_points, dst.matches_played, dst.wins, dst.losses, dst.created_at, dst.updated_at
+`
+
+type MergeProfileFromSourceParams struct {
+	DstUserID pgtype.UUID
+	SrcUserID pgtype.UUID
+}
+
+// Keep placeholder non-empty fields; fill blanks from source application profile.
+func (q *Queries) MergeProfileFromSource(ctx context.Context, arg MergeProfileFromSourceParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, mergeProfileFromSource, arg.DstUserID, arg.SrcUserID)
+	var i Profile
+	err := row.Scan(
+		&i.UserID,
+		&i.ClubID,
+		&i.Phone,
+		&i.Level,
+		&i.Slug,
+		&i.Gender,
+		&i.City,
+		&i.Bio,
+		&i.AvatarUrl,
+		&i.AvatarFileID,
+		&i.PlayerStatus,
+		&i.BirthDate,
+		&i.VerificationStatus,
+		&i.VerifiedAt,
+		&i.VerifiedBy,
+		&i.VerificationNote,
+		&i.Rating,
+		&i.Points,
+		&i.SinglesPoints,
+		&i.DoublesPoints,
+		&i.MatchesPlayed,
+		&i.Wins,
+		&i.Losses,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateProfileLevelAndNames = `-- name: UpdateProfileLevelAndNames :exec

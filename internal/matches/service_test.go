@@ -43,7 +43,7 @@ func createPlayer(t *testing.T, store *db.Store, email string) pgtype.UUID {
 		t.Fatal(err)
 	}
 	user, err := store.Queries.CreateUserVerified(ctx, sqlc.CreateUserVerifiedParams{
-		Email:        email,
+		Email: pgtype.Text{String: email, Valid: true},
 		PasswordHash: hash,
 		FirstName:    "P",
 		LastName:     email,

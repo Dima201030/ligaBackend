@@ -44,7 +44,7 @@ func userWithProfileJSON(u sqlc.User, level string, phone pgtype.Text, created, 
 	}
 	out := userJSON{
 		ID:            uuidString(u.ID),
-		Email:         u.Email,
+		Email:         emailString(u.Email),
 		FirstName:     u.FirstName,
 		LastName:      u.LastName,
 		Role:          string(u.Role),
@@ -83,7 +83,7 @@ func applicationFromRow(row sqlc.ListApplicationsRow) applicationJSON {
 	}
 	out := applicationJSON{
 		ID:            uuidString(row.ID),
-		Email:         row.Email,
+		Email:         emailString(row.Email),
 		FirstName:     row.FirstName,
 		LastName:      row.LastName,
 		Status:        string(row.Status),

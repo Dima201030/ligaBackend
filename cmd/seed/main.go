@@ -49,12 +49,12 @@ func main() {
 		log.Fatalf("hash: %v", err)
 	}
 
-	existing, err := store.Queries.GetUserByEmail(ctx, email)
+	existing, err := store.Queries.GetUserByEmail(ctx, pgtype.Text{String: email, Valid: true})
 	if err == nil {
 		reset := strings.TrimSpace(os.Getenv("SEED_ORGANIZER_RESET")) == "1"
 		if !reset {
 			fmt.Printf("organizer already exists: id=%s email=%s status=%s role=%s\n",
-				uuidString(existing.ID), existing.Email, existing.Status, existing.Role)
+				uuidString(existing.ID), existing.Email.String, existing.Status, existing.Role)
 			fmt.Println("set SEED_ORGANIZER_RESET=1 to update password/role/status")
 			return
 		}
@@ -73,7 +73,7 @@ func main() {
 			log.Fatalf("reset organizer: %v", err)
 		}
 		fmt.Printf("updated organizer: id=%s email=%s role=organizer status=approved\n",
-			uuidString(existing.ID), existing.Email)
+			uuidString(existing.ID), existing.Email.String)
 		return
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -88,7 +88,7 @@ func main() {
 	q := store.Queries.WithTx(tx)
 
 	user, err := q.CreateUserVerified(ctx, sqlc.CreateUserVerifiedParams{
-		Email:        email,
+		Email:        pgtype.Text{String: email, Valid: true},
 		PasswordHash: hash,
 		FirstName:    firstName,
 		LastName:     lastName,
@@ -117,7 +117,7 @@ func main() {
 	}
 
 	fmt.Printf("seeded organizer: id=%s email=%s role=%s status=%s\n",
-		uuidString(user.ID), user.Email, user.Role, user.Status)
+		uuidString(user.ID), user.Email.String, user.Role, user.Status)
 }
 
 func envOr(key, fallback string) string {

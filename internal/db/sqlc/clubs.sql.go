@@ -236,7 +236,7 @@ type ListClubMembersRow struct {
 	Status     ClubMemberStatus
 	CreatedAt  pgtype.Timestamptz
 	UpdatedAt  pgtype.Timestamptz
-	Email      string
+	Email      pgtype.Text
 	FirstName  string
 	LastName   string
 	UserStatus UserStatus

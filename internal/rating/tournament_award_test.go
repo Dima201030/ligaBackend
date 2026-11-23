@@ -43,7 +43,7 @@ func TestApplyTournamentPointsIdempotentAndIncludesPartner(t *testing.T) {
 			t.Fatal(err)
 		}
 		user, err := store.Queries.CreateUserVerified(ctx, sqlc.CreateUserVerifiedParams{
-			Email:        email,
+			Email: pgtype.Text{String: email, Valid: true},
 			PasswordHash: hash,
 			FirstName:    "A",
 			LastName:     "B",
@@ -147,7 +147,7 @@ func TestApplyTournamentPointsWalkoverOnlyHalves(t *testing.T) {
 			t.Fatal(err)
 		}
 		user, err := store.Queries.CreateUserVerified(ctx, sqlc.CreateUserVerifiedParams{
-			Email: email, PasswordHash: hash, FirstName: "W", LastName: "O",
+			Email: pgtype.Text{String: email, Valid: true}, PasswordHash: hash, FirstName: "W", LastName: "O",
 			Role: sqlc.UserRolePlayer, Status: sqlc.UserStatusApproved,
 		})
 		if err != nil {
@@ -252,7 +252,7 @@ func TestApplyTournamentPointsConsolation(t *testing.T) {
 		t.Helper()
 		hash, _ := crypto.HashPassword("password123")
 		user, err := store.Queries.CreateUserVerified(ctx, sqlc.CreateUserVerifiedParams{
-			Email: email, PasswordHash: hash, FirstName: "C", LastName: "S",
+			Email: pgtype.Text{String: email, Valid: true}, PasswordHash: hash, FirstName: "C", LastName: "S",
 			Role: sqlc.UserRolePlayer, Status: sqlc.UserStatusApproved,
 		})
 		if err != nil {
@@ -337,7 +337,7 @@ func TestApplyTournamentPointsDEPlaces(t *testing.T) {
 		t.Helper()
 		hash, _ := crypto.HashPassword("password123")
 		user, err := store.Queries.CreateUserVerified(ctx, sqlc.CreateUserVerifiedParams{
-			Email: email, PasswordHash: hash, FirstName: "D", LastName: "E",
+			Email: pgtype.Text{String: email, Valid: true}, PasswordHash: hash, FirstName: "D", LastName: "E",
 			Role: sqlc.UserRolePlayer, Status: sqlc.UserStatusApproved,
 		})
 		if err != nil {

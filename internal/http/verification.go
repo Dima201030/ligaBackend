@@ -108,12 +108,17 @@ func (s *Server) handleConfirmPlayerVerification(w http.ResponseWriter, r *http.
 	}
 
 	ctx := r.Context()
-	if _, err := s.store.Queries.GetProfileByUserID(ctx, id); err != nil {
+	existing, err := s.store.Queries.GetProfileByUserID(ctx, id)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Игрок не найден")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось подтвердить профиль")
+		return
+	}
+	if existing.ClubID != s.currentClubID(r) {
+		writeError(w, http.StatusNotFound, "not_found", "Игрок не найден в этом клубе")
 		return
 	}
 
