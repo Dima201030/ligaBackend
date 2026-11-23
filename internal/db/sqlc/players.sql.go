@@ -82,6 +82,95 @@ func (q *Queries) ConfirmProfileVerification(ctx context.Context, arg ConfirmPro
 	return i, err
 }
 
+const createApprovedProfile = `-- name: CreateApprovedProfile :one
+INSERT INTO profiles (
+    user_id, club_id, phone, level, slug, gender, city, bio, avatar_url,
+    player_status, verification_status, verified_at, verified_by, verification_note,
+    rating, points, singles_points, doubles_points, matches_played, wins, losses
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9,
+    $10, 'approved', now(), $11, $12,
+    $13, $14, $15, $16, $17, $18, $19
+)
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, birth_date, verification_status, verified_at, verified_by, verification_note, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+`
+
+type CreateApprovedProfileParams struct {
+	UserID           pgtype.UUID
+	ClubID           pgtype.UUID
+	Phone            pgtype.Text
+	Level            string
+	Slug             string
+	Gender           pgtype.Text
+	City             string
+	Bio              string
+	AvatarUrl        pgtype.Text
+	PlayerStatus     string
+	VerifiedBy       pgtype.UUID
+	VerificationNote pgtype.Text
+	Rating           float64
+	Points           int32
+	SinglesPoints    int32
+	DoublesPoints    int32
+	MatchesPlayed    int32
+	Wins             int32
+	Losses           int32
+}
+
+// Organizer placeholder: start already verification-approved for tournament gate.
+func (q *Queries) CreateApprovedProfile(ctx context.Context, arg CreateApprovedProfileParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, createApprovedProfile,
+		arg.UserID,
+		arg.ClubID,
+		arg.Phone,
+		arg.Level,
+		arg.Slug,
+		arg.Gender,
+		arg.City,
+		arg.Bio,
+		arg.AvatarUrl,
+		arg.PlayerStatus,
+		arg.VerifiedBy,
+		arg.VerificationNote,
+		arg.Rating,
+		arg.Points,
+		arg.SinglesPoints,
+		arg.DoublesPoints,
+		arg.MatchesPlayed,
+		arg.Wins,
+		arg.Losses,
+	)
+	var i Profile
+	err := row.Scan(
+		&i.UserID,
+		&i.ClubID,
+		&i.Phone,
+		&i.Level,
+		&i.Slug,
+		&i.Gender,
+		&i.City,
+		&i.Bio,
+		&i.AvatarUrl,
+		&i.AvatarFileID,
+		&i.PlayerStatus,
+		&i.BirthDate,
+		&i.VerificationStatus,
+		&i.VerifiedAt,
+		&i.VerifiedBy,
+		&i.VerificationNote,
+		&i.Rating,
+		&i.Points,
+		&i.SinglesPoints,
+		&i.DoublesPoints,
+		&i.MatchesPlayed,
+		&i.Wins,
+		&i.Losses,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createProfile = `-- name: CreateProfile :one
 INSERT INTO profiles (
     user_id, club_id, phone, level, slug, gender, city, bio, avatar_url,

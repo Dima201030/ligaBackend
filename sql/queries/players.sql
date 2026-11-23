@@ -8,6 +8,19 @@ INSERT INTO profiles (
 )
 RETURNING *;
 
+-- name: CreateApprovedProfile :one
+-- Organizer placeholder: start already verification-approved for tournament gate.
+INSERT INTO profiles (
+    user_id, club_id, phone, level, slug, gender, city, bio, avatar_url,
+    player_status, verification_status, verified_at, verified_by, verification_note,
+    rating, points, singles_points, doubles_points, matches_played, wins, losses
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9,
+    $10, 'approved', now(), $11, $12,
+    $13, $14, $15, $16, $17, $18, $19
+)
+RETURNING *;
+
 -- name: GetProfileByUserID :one
 SELECT user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status,
        birth_date, verification_status, verified_at, verified_by, verification_note,

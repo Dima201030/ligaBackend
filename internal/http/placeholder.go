@@ -100,23 +100,30 @@ func (s *Server) handleCreatePlaceholderPlayer(w http.ResponseWriter, r *http.Re
 	}
 
 	clubID := s.currentClubID(r)
-	profile, err := q.CreateProfile(ctx, rating.NewProfileParams(
-		user.ID, clubID, auth.TextOrNull(phone), level, firstName, lastName,
-	))
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "Не удалось создать игрока")
-		return
-	}
-
-	// Auto-approve profile so placeholder can enter tournaments/ratings (register gate).
-	profile, err = q.ConfirmProfileVerification(ctx, sqlc.ConfirmProfileVerificationParams{
-		UserID:             user.ID,
-		VerificationStatus: sqlc.ProfileVerificationStatusApproved,
-		VerifiedBy:         organizer.ID,
-		VerificationNote:   optionalText("organizer_placeholder"),
+	base := rating.NewProfileParams(user.ID, clubID, auth.TextOrNull(phone), level, firstName, lastName)
+	profile, err := q.CreateApprovedProfile(ctx, sqlc.CreateApprovedProfileParams{
+		UserID:           base.UserID,
+		ClubID:           base.ClubID,
+		Phone:            base.Phone,
+		Level:            base.Level,
+		Slug:             base.Slug,
+		Gender:           base.Gender,
+		City:             base.City,
+		Bio:              base.Bio,
+		AvatarUrl:        base.AvatarUrl,
+		PlayerStatus:     base.PlayerStatus,
+		VerifiedBy:       organizer.ID,
+		VerificationNote: optionalText("organizer_placeholder"),
+		Rating:           base.Rating,
+		Points:           base.Points,
+		SinglesPoints:    base.SinglesPoints,
+		DoublesPoints:    base.DoublesPoints,
+		MatchesPlayed:    base.MatchesPlayed,
+		Wins:             base.Wins,
+		Losses:           base.Losses,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "Не удалось подтвердить профиль игрока")
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось создать игрока")
 		return
 	}
 
