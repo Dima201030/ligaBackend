@@ -315,6 +315,34 @@ func (s *Server) handlePublishBracket(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// POST /tournaments/{id}/bracket/sync-qualifiers — backfill A1/B1/… from finished groups.
+func (s *Server) handleSyncBracketQualifiers(w http.ResponseWriter, r *http.Request) {
+	actor := auth.UserFromContext(r.Context())
+	if actor == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
+		return
+	}
+	id, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор")
+		return
+	}
+	tour, err := s.loadClubTournament(r, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турнир")
+		return
+	}
+	if err := matches.SyncGroupPlayoffQualifiers(r.Context(), s.store, tour.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось обновить плей-офф")
+		return
+	}
+	s.writeBracketPayload(w, r, tour, true)
+}
+
 func (s *Server) handleListOrganizerMatches(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.store.Queries.ListOrganizerMatches(r.Context(), s.currentClubID(r))
 	if err != nil {

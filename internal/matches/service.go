@@ -26,6 +26,8 @@ import (
 //   - Publish moves draft → published; re-publish of already published is idempotent.
 //   - Submit score / walkover / cancel use optimistic version locking; concurrent
 //     writers get ErrConflict. Winner advance into next_match runs in the same TX.
+//     Groups-playoff also syncs A1/B1/… playoff slots from finished group standings
+//     (group matches have no next_match_id).
 //   - SwapSlots exchanges two seedable sides without regenerating the tree.
 //     Allowed only while no match has a recorded result (same lock as Generate).
 var (
@@ -640,6 +642,13 @@ func finishMatch(ctx context.Context, store *db.Store, in finishParams) (FinishO
 	}
 	if err := advanceSide(ctx, q, match.LoserNextMatchID, match.LoserNextSlot, loser); err != nil {
 		return FinishOutcome{}, err
+	}
+
+	// Groups → playoff: group matches have no next_match_id; fill A1/B1/… from standings.
+	if match.Stage == "group" {
+		if err := syncGroupPlayoffQualifiers(ctx, q, match.TournamentID); err != nil {
+			return FinishOutcome{}, err
+		}
 	}
 
 	// Elo is idempotent per (match, player); corrections keep existing rating events.
