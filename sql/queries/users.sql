@@ -106,6 +106,13 @@ INSERT INTO users (
 RETURNING id, email, password_hash, first_name, last_name, role, status,
           email_verified_at, created_at, updated_at;
 
+-- name: ClearUserEmail :exec
+-- Free the unique email index before claiming onto a placeholder.
+UPDATE users
+SET email = NULL, updated_at = now()
+WHERE id = $1
+  AND email IS NOT NULL;
+
 -- name: ClaimPlaceholderFromUser :one
 -- Absorb credentials from a real account onto a placeholder (email IS NULL).
 UPDATE users

@@ -368,11 +368,20 @@ func (s *Server) handleMergePlaceholderPlayer(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Free unique email index on source before claiming onto placeholder.
+	sourceEmail := source.Email
+	sourceHash := source.PasswordHash
+	sourceVerified := source.EmailVerifiedAt
+	if err := q.ClearUserEmail(ctx, sourceID); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось освободить email заявки")
+		return
+	}
+
 	claimed, err := q.ClaimPlaceholderFromUser(ctx, sqlc.ClaimPlaceholderFromUserParams{
 		ID:              placeholderID,
-		Email:           source.Email,
-		PasswordHash:    source.PasswordHash,
-		EmailVerifiedAt: source.EmailVerifiedAt,
+		Email:           sourceEmail,
+		PasswordHash:    sourceHash,
+		EmailVerifiedAt: sourceVerified,
 		FirstName:       firstName,
 		LastName:        lastName,
 	})

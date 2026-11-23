@@ -96,6 +96,19 @@ func (q *Queries) ClaimPlaceholderFromUser(ctx context.Context, arg ClaimPlaceho
 	return i, err
 }
 
+const clearUserEmail = `-- name: ClearUserEmail :exec
+UPDATE users
+SET email = NULL, updated_at = now()
+WHERE id = $1
+  AND email IS NOT NULL
+`
+
+// Free the unique email index before claiming onto a placeholder.
+func (q *Queries) ClearUserEmail(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearUserEmail, id)
+	return err
+}
+
 const createPlaceholderUser = `-- name: CreatePlaceholderUser :one
 INSERT INTO users (
     email, password_hash, first_name, last_name, role, status
