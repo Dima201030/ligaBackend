@@ -26,6 +26,8 @@ import (
 //   - Publish moves draft → published; re-publish of already published is idempotent.
 //   - Submit score / walkover / cancel use optimistic version locking; concurrent
 //     writers get ErrConflict. Winner advance into next_match runs in the same TX.
+//   - SwapSlots exchanges two seedable sides without regenerating the tree.
+//     Allowed only while no match has a recorded result (same lock as Generate).
 var (
 	ErrTournamentNotFound = errors.New("tournament not found")
 	ErrNotEnoughPlayers   = errors.New("not enough players")
@@ -36,6 +38,8 @@ var (
 	ErrInvalidWinner      = errors.New("invalid winner")
 	ErrMatchNotPlayable   = errors.New("match not playable")
 	ErrSideIncomplete     = errors.New("side incomplete")
+	ErrInvalidSlot        = errors.New("invalid slot")
+	ErrSlotNotSwappable   = errors.New("slot not swappable")
 )
 
 type GenerateInput struct {
@@ -97,6 +101,19 @@ type ScheduleInput struct {
 	Court       pgtype.Text
 	MarkLive    *bool
 	ActorID     pgtype.UUID
+}
+
+// SlotRef points at one side of a match in a tournament bracket.
+type SlotRef struct {
+	MatchID pgtype.UUID
+	Side    int16 // 1 or 2
+}
+
+type SwapInput struct {
+	TournamentID pgtype.UUID
+	A            SlotRef
+	B            SlotRef
+	ActorID      pgtype.UUID
 }
 
 // Generate builds a draw from confirmed registrations and persists it as draft.
@@ -946,6 +963,274 @@ func UpdateSchedule(ctx context.Context, store *db.Store, in ScheduleInput) (sql
 		return sqlc.Match{}, err
 	}
 	return updated, nil
+}
+
+// SwapSlots exchanges two seedable bracket sides (player ↔ player or player ↔ bye)
+// without regenerating the draw. Refused once any match has a recorded result.
+func SwapSlots(ctx context.Context, store *db.Store, in SwapInput) (sqlc.Tournament, error) {
+	if in.A.Side != 1 && in.A.Side != 2 {
+		return sqlc.Tournament{}, ErrInvalidSlot
+	}
+	if in.B.Side != 1 && in.B.Side != 2 {
+		return sqlc.Tournament{}, ErrInvalidSlot
+	}
+	if uuidString(in.A.MatchID) == uuidString(in.B.MatchID) && in.A.Side == in.B.Side {
+		return sqlc.Tournament{}, ErrInvalidSlot
+	}
+
+	tx, err := store.Pool.Begin(ctx)
+	if err != nil {
+		return sqlc.Tournament{}, err
+	}
+	defer tx.Rollback(ctx)
+	q := store.Queries.WithTx(tx)
+
+	tour, err := q.LockTournamentByID(ctx, in.TournamentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return sqlc.Tournament{}, ErrTournamentNotFound
+		}
+		return sqlc.Tournament{}, err
+	}
+	if tour.BracketStatus == sqlc.BracketStatusNone {
+		return sqlc.Tournament{}, ErrBracketMissing
+	}
+
+	results, err := q.CountResultMatches(ctx, in.TournamentID)
+	if err != nil {
+		return sqlc.Tournament{}, err
+	}
+	if results > 0 {
+		return sqlc.Tournament{}, ErrBracketLocked
+	}
+
+	matchA, sideA, err := loadSwappableSlot(ctx, q, in.TournamentID, tour.Format, in.A)
+	if err != nil {
+		return sqlc.Tournament{}, err
+	}
+	matchB, sideB, err := loadSwappableSlot(ctx, q, in.TournamentID, tour.Format, in.B)
+	if err != nil {
+		return sqlc.Tournament{}, err
+	}
+
+	// Exchange payloads.
+	if err := writeSide(ctx, q, matchA.ID, in.A.Side, sideB); err != nil {
+		return sqlc.Tournament{}, err
+	}
+	if err := writeSide(ctx, q, matchB.ID, in.B.Side, sideA); err != nil {
+		return sqlc.Tournament{}, err
+	}
+
+	touched := uniqueMatches(matchA, matchB)
+	for _, m := range touched {
+		if err := recomputeByeAdvancement(ctx, q, m.ID); err != nil {
+			return sqlc.Tournament{}, err
+		}
+	}
+
+	diff, _ := json.Marshal(map[string]any{
+		"a": map[string]any{"match_id": uuidString(in.A.MatchID), "side": in.A.Side},
+		"b": map[string]any{"match_id": uuidString(in.B.MatchID), "side": in.B.Side},
+	})
+	_, _ = q.InsertAuditLog(ctx, sqlc.InsertAuditLogParams{
+		ActorID:  in.ActorID,
+		Action:   "bracket.swap",
+		Entity:   "tournament",
+		EntityID: pgtype.Text{String: uuidString(in.TournamentID), Valid: true},
+		Diff:     diff,
+	})
+
+	if err := tx.Commit(ctx); err != nil {
+		return sqlc.Tournament{}, err
+	}
+	return tour, nil
+}
+
+func loadSwappableSlot(ctx context.Context, q *sqlc.Queries, tournamentID pgtype.UUID, format sqlc.TournamentFormat, ref SlotRef) (sqlc.Match, sqlc.MatchSide, error) {
+	match, err := q.LockMatchByID(ctx, ref.MatchID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return sqlc.Match{}, sqlc.MatchSide{}, ErrMatchNotFound
+		}
+		return sqlc.Match{}, sqlc.MatchSide{}, err
+	}
+	if uuidString(match.TournamentID) != uuidString(tournamentID) {
+		return sqlc.Match{}, sqlc.MatchSide{}, ErrMatchNotFound
+	}
+	switch match.Status {
+	case sqlc.MatchStatusScheduled, sqlc.MatchStatusBye, sqlc.MatchStatusLive:
+		// ok
+	default:
+		return sqlc.Match{}, sqlc.MatchSide{}, ErrMatchNotPlayable
+	}
+	if !slotStageSwappable(match, format) {
+		return sqlc.Match{}, sqlc.MatchSide{}, ErrSlotNotSwappable
+	}
+
+	sides, err := q.ListMatchSidesByMatchIDs(ctx, []pgtype.UUID{match.ID})
+	if err != nil {
+		return sqlc.Match{}, sqlc.MatchSide{}, err
+	}
+	s1, s2, ok := pairSides(sides)
+	if !ok {
+		return sqlc.Match{}, sqlc.MatchSide{}, ErrSideIncomplete
+	}
+	side := s1
+	if ref.Side == 2 {
+		side = s2
+	}
+	if !side.PlayerID.Valid && !side.IsBye {
+		// Placeholder (winner of …) — not a seed slot.
+		return sqlc.Match{}, sqlc.MatchSide{}, ErrSlotNotSwappable
+	}
+	return match, side, nil
+}
+
+func slotStageSwappable(match sqlc.Match, format sqlc.TournamentFormat) bool {
+	switch match.Stage {
+	case "group":
+		return true
+	case "main", "lower":
+		if format == sqlc.TournamentFormatRoundRobin {
+			return true
+		}
+		// Olympic / DE / groups-playoff playoff: only seed round (index 0).
+		return match.RoundIndex == 0
+	default:
+		return false
+	}
+}
+
+func writeSide(ctx context.Context, q *sqlc.Queries, matchID pgtype.UUID, side int16, src sqlc.MatchSide) error {
+	_, err := q.UpdateMatchSidePlayers(ctx, sqlc.UpdateMatchSidePlayersParams{
+		MatchID:        matchID,
+		Side:           side,
+		PlayerID:       src.PlayerID,
+		PartnerID:      src.PartnerID,
+		RegistrationID: src.RegistrationID,
+		Seed:           src.Seed,
+		Label:          src.Label,
+		IsBye:          src.IsBye,
+	})
+	return err
+}
+
+func uniqueMatches(matches ...sqlc.Match) []sqlc.Match {
+	seen := map[string]struct{}{}
+	out := make([]sqlc.Match, 0, len(matches))
+	for _, m := range matches {
+		key := uuidString(m.ID)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, m)
+	}
+	return out
+}
+
+// recomputeByeAdvancement refreshes match bye state and the next-round slot
+// that this match feeds when it is (or was) an automatic bye.
+func recomputeByeAdvancement(ctx context.Context, q *sqlc.Queries, matchID pgtype.UUID) error {
+	match, err := q.LockMatchByID(ctx, matchID)
+	if err != nil {
+		return err
+	}
+	sides, err := q.ListMatchSidesByMatchIDs(ctx, []pgtype.UUID{match.ID})
+	if err != nil {
+		return err
+	}
+	s1, s2, ok := pairSides(sides)
+	if !ok {
+		return ErrSideIncomplete
+	}
+
+	has1 := s1.PlayerID.Valid
+	has2 := s2.PlayerID.Valid
+	var (
+		status     sqlc.MatchStatus
+		isBye      bool
+		winnerSide pgtype.Int2
+		winner     sqlc.MatchSide
+	)
+	switch {
+	case has1 && has2:
+		status = sqlc.MatchStatusScheduled
+		isBye = false
+		// Clear accidental bye flag on sides if both have players.
+		if s1.IsBye {
+			s1.IsBye = false
+			if err := writeSide(ctx, q, match.ID, 1, s1); err != nil {
+				return err
+			}
+		}
+		if s2.IsBye {
+			s2.IsBye = false
+			if err := writeSide(ctx, q, match.ID, 2, s2); err != nil {
+				return err
+			}
+		}
+	case has1 && !has2:
+		status = sqlc.MatchStatusBye
+		isBye = true
+		winnerSide = pgtype.Int2{Int16: 1, Valid: true}
+		winner = s1
+		if !s2.IsBye || (s2.Label.Valid && s2.Label.String != "Пропуск") {
+			s2.IsBye = true
+			s2.Label = pgtype.Text{String: "Пропуск", Valid: true}
+			s2.PlayerID = pgtype.UUID{}
+			s2.PartnerID = pgtype.UUID{}
+			s2.RegistrationID = pgtype.UUID{}
+			s2.Seed = pgtype.Int4{}
+			if err := writeSide(ctx, q, match.ID, 2, s2); err != nil {
+				return err
+			}
+		}
+	case !has1 && has2:
+		status = sqlc.MatchStatusBye
+		isBye = true
+		winnerSide = pgtype.Int2{Int16: 2, Valid: true}
+		winner = s2
+		if !s1.IsBye || (s1.Label.Valid && s1.Label.String != "Пропуск") {
+			s1.IsBye = true
+			s1.Label = pgtype.Text{String: "Пропуск", Valid: true}
+			s1.PlayerID = pgtype.UUID{}
+			s1.PartnerID = pgtype.UUID{}
+			s1.RegistrationID = pgtype.UUID{}
+			s1.Seed = pgtype.Int4{}
+			if err := writeSide(ctx, q, match.ID, 1, s1); err != nil {
+				return err
+			}
+		}
+	default:
+		// Two empties / two byes — keep scheduled empty; clear advancement.
+		status = sqlc.MatchStatusScheduled
+		isBye = false
+	}
+
+	if _, err := q.SetMatchBracketState(ctx, sqlc.SetMatchBracketStateParams{
+		ID:         match.ID,
+		Status:     status,
+		IsBye:      isBye,
+		WinnerSide: winnerSide,
+	}); err != nil {
+		return err
+	}
+
+	if !match.NextMatchID.Valid || !match.NextSlot.Valid {
+		return nil
+	}
+
+	placeholder := pgtype.Text{String: "Победитель " + match.BracketKey, Valid: true}
+	if isBye && winner.PlayerID.Valid {
+		return advanceSide(ctx, q, match.NextMatchID, match.NextSlot, winner)
+	}
+	_, err = q.ClearMatchSidePlayers(ctx, sqlc.ClearMatchSidePlayersParams{
+		MatchID: match.NextMatchID,
+		Side:    match.NextSlot.Int16,
+		Label:   placeholder,
+	})
+	return err
 }
 
 func uuidString(id pgtype.UUID) string {

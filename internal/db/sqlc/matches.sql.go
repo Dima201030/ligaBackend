@@ -788,6 +788,54 @@ func (q *Queries) SetMatchStatus(ctx context.Context, arg SetMatchStatusParams) 
 	return i, err
 }
 
+const setMatchBracketState = `-- name: SetMatchBracketState :one
+UPDATE matches
+SET status = $2,
+    is_bye = $3,
+    winner_side = $4,
+    version = version + 1,
+    updated_at = now()
+WHERE id = $1
+  AND status IN ('scheduled', 'bye', 'live')
+RETURNING id, tournament_id, bracket_key, stage, round_index, position, round_label, scheduled_at, court, status, score_sets, score_text, winner_side, next_match_id, next_slot, loser_next_match_id, loser_next_slot, is_bye, version, created_at, updated_at
+`
+
+type SetMatchBracketStateParams struct {
+	ID         pgtype.UUID
+	Status     MatchStatus
+	IsBye      bool
+	WinnerSide pgtype.Int2
+}
+
+func (q *Queries) SetMatchBracketState(ctx context.Context, arg SetMatchBracketStateParams) (Match, error) {
+	row := q.db.QueryRow(ctx, setMatchBracketState, arg.ID, arg.Status, arg.IsBye, arg.WinnerSide)
+	var i Match
+	err := row.Scan(
+		&i.ID,
+		&i.TournamentID,
+		&i.BracketKey,
+		&i.Stage,
+		&i.RoundIndex,
+		&i.Position,
+		&i.RoundLabel,
+		&i.ScheduledAt,
+		&i.Court,
+		&i.Status,
+		&i.ScoreSets,
+		&i.ScoreText,
+		&i.WinnerSide,
+		&i.NextMatchID,
+		&i.NextSlot,
+		&i.LoserNextMatchID,
+		&i.LoserNextSlot,
+		&i.IsBye,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const setTournamentBracketDraft = `-- name: SetTournamentBracketDraft :one
 UPDATE tournaments
 SET bracket_status = 'draft',

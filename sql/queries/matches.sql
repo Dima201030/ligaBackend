@@ -198,6 +198,17 @@ WHERE id = $1
   AND status IN ('scheduled', 'live')
 RETURNING *;
 
+-- name: SetMatchBracketState :one
+UPDATE matches
+SET status = $2,
+    is_bye = $3,
+    winner_side = $4,
+    version = version + 1,
+    updated_at = now()
+WHERE id = $1
+  AND status IN ('scheduled', 'bye', 'live')
+RETURNING *;
+
 -- name: ListOrganizerMatches :many
 SELECT
     m.*,

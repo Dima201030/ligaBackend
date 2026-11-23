@@ -225,6 +225,162 @@ func TestGenerateByeAndScoreAdvance(t *testing.T) {
 	}
 }
 
+func TestSwapSlotsPlayersAndBye(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+	slug := fmt.Sprintf("sw-%d", time.Now().UnixNano())
+	tour := createOpenTournament(t, store, slug, 16)
+	confirmPlayers(t, store, tour.ID, 5, slug)
+	actor := createPlayer(t, store, fmt.Sprintf("org-%s@test.local", slug))
+
+	if _, _, err := matches.Generate(ctx, store, matches.GenerateInput{
+		TournamentID: tour.ID,
+		Seeding:      "seed",
+		ActorID:      actor,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := store.Queries.ListMatchesByTournament(ctx, tour.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var playable, byeMatch *sqlc.Match
+	var playableSide, byeSide int16
+	for i := range all {
+		m := all[i]
+		if m.RoundIndex != 0 || m.Stage != "main" {
+			continue
+		}
+		sides, err := store.Queries.ListMatchSidesByMatchIDs(ctx, []pgtype.UUID{m.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s1, s2, ok := pairSidesForTest(sides)
+		if !ok {
+			continue
+		}
+		if playable == nil && m.Status == sqlc.MatchStatusScheduled && s1.PlayerID.Valid && s2.PlayerID.Valid {
+			playable = &all[i]
+			playableSide = 2
+		}
+		if byeMatch == nil && m.Status == sqlc.MatchStatusBye {
+			byeMatch = &all[i]
+			if s1.IsBye {
+				byeSide = 1
+			} else {
+				byeSide = 2
+			}
+		}
+	}
+	if playable == nil || byeMatch == nil {
+		t.Fatal("need playable and bye first-round matches")
+	}
+
+	beforePlayable, _ := store.Queries.ListMatchSidesByMatchIDs(ctx, []pgtype.UUID{playable.ID})
+	beforeBye, _ := store.Queries.ListMatchSidesByMatchIDs(ctx, []pgtype.UUID{byeMatch.ID})
+	pSide := sideByNum(beforePlayable, playableSide)
+	bSide := sideByNum(beforeBye, byeSide)
+	if !pSide.PlayerID.Valid || !bSide.IsBye {
+		t.Fatalf("precondition failed: playable player=%v bye=%v", pSide.PlayerID.Valid, bSide.IsBye)
+	}
+	movedPlayer := pSide.PlayerID
+
+	if _, err := matches.SwapSlots(ctx, store, matches.SwapInput{
+		TournamentID: tour.ID,
+		A:            matches.SlotRef{MatchID: playable.ID, Side: playableSide},
+		B:            matches.SlotRef{MatchID: byeMatch.ID, Side: byeSide},
+		ActorID:      actor,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	afterPlayableMatch, err := store.Queries.GetMatchByID(ctx, playable.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterPlayableMatch.Status != sqlc.MatchStatusBye || !afterPlayableMatch.IsBye {
+		t.Fatalf("playable should become bye: status=%s bye=%v", afterPlayableMatch.Status, afterPlayableMatch.IsBye)
+	}
+	afterByeMatch, err := store.Queries.GetMatchByID(ctx, byeMatch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterByeMatch.Status != sqlc.MatchStatusScheduled || afterByeMatch.IsBye {
+		t.Fatalf("bye should become scheduled: status=%s bye=%v", afterByeMatch.Status, afterByeMatch.IsBye)
+	}
+
+	afterByeSides, _ := store.Queries.ListMatchSidesByMatchIDs(ctx, []pgtype.UUID{byeMatch.ID})
+	foundMoved := false
+	for _, s := range afterByeSides {
+		if s.PlayerID.Valid && uuidEqual(s.PlayerID, movedPlayer) {
+			foundMoved = true
+		}
+	}
+	if !foundMoved {
+		t.Fatal("player did not move into former bye match")
+	}
+
+	// Scoring still works after swap.
+	sides, _ := store.Queries.ListMatchSidesByMatchIDs(ctx, []pgtype.UUID{byeMatch.ID})
+	s1, s2, _ := pairSidesForTest(sides)
+	if !s1.PlayerID.Valid || !s2.PlayerID.Valid {
+		t.Fatal("former bye match must have two players to score")
+	}
+	outcome, err := matches.SubmitScore(ctx, store, matches.ScoreInput{
+		MatchID: byeMatch.ID,
+		Sets: []matches.SetScore{
+			{Side1: 6, Side2: 3},
+			{Side1: 6, Side2: 4},
+		},
+		Version: afterByeMatch.Version,
+		ActorID: actor,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Match.Status != sqlc.MatchStatusCompleted {
+		t.Fatalf("status=%s", outcome.Match.Status)
+	}
+
+	// Further swaps locked after results.
+	_, err = matches.SwapSlots(ctx, store, matches.SwapInput{
+		TournamentID: tour.ID,
+		A:            matches.SlotRef{MatchID: playable.ID, Side: 1},
+		B:            matches.SlotRef{MatchID: byeMatch.ID, Side: 1},
+		ActorID:      actor,
+	})
+	if err != matches.ErrBracketLocked {
+		t.Fatalf("expected lock, got %v", err)
+	}
+}
+
+func pairSidesForTest(sides []sqlc.MatchSide) (s1, s2 sqlc.MatchSide, ok bool) {
+	for _, s := range sides {
+		switch s.Side {
+		case 1:
+			s1 = s
+		case 2:
+			s2 = s
+		}
+	}
+	return s1, s2, s1.ID.Valid && s2.ID.Valid
+}
+
+func sideByNum(sides []sqlc.MatchSide, side int16) sqlc.MatchSide {
+	for _, s := range sides {
+		if s.Side == side {
+			return s
+		}
+	}
+	return sqlc.MatchSide{}
+}
+
+func uuidEqual(a, b pgtype.UUID) bool {
+	return a.Valid && b.Valid && a.Bytes == b.Bytes
+}
+
 func TestParallelScoreConflict(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()

@@ -124,6 +124,7 @@ func NewWithOptions(opts Options) *Server {
 		r.Patch("/tournaments/{id}/registrations/{regId}", s.handleUpdateOrganizerRegistrationStatus)
 		r.Get("/tournaments/{id}/bracket", s.handleGetOrganizerBracket)
 		r.Post("/tournaments/{id}/bracket/generate", s.handleGenerateBracket)
+		r.Post("/tournaments/{id}/bracket/swap", s.handleSwapBracketSlots)
 		r.Post("/tournaments/{id}/bracket/publish", s.handlePublishBracket)
 		r.Get("/tournaments/{id}/matches", s.handleListOrganizerTournamentMatches)
 		r.Post("/tournaments/{id}/ratings/apply", s.handleApplyTournamentRatings)

@@ -24,6 +24,16 @@ type generateBracketRequest struct {
 	RandomSeed         int64  `json:"random_seed"`
 }
 
+type bracketSlotRefRequest struct {
+	MatchID string `json:"match_id"`
+	Side    int16  `json:"side"`
+}
+
+type swapBracketRequest struct {
+	A bracketSlotRefRequest `json:"a"`
+	B bracketSlotRefRequest `json:"b"`
+}
+
 type scoreRequest struct {
 	Sets    json.RawMessage `json:"sets"`
 	Version int32           `json:"version"`
@@ -198,6 +208,72 @@ func (s *Server) handleGenerateBracket(w http.ResponseWriter, r *http.Request) {
 		},
 		"matches": list,
 	})
+}
+
+func (s *Server) handleSwapBracketSlots(w http.ResponseWriter, r *http.Request) {
+	actor := auth.UserFromContext(r.Context())
+	if actor == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
+		return
+	}
+	id, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор")
+		return
+	}
+	if _, err := s.loadClubTournament(r, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турнир")
+		return
+	}
+	var body swapBracketRequest
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Некорректное тело запроса")
+		return
+	}
+	aMatch, err := parseUUID(strings.TrimSpace(body.A.MatchID))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation", "Некорректный match_id (a)")
+		return
+	}
+	bMatch, err := parseUUID(strings.TrimSpace(body.B.MatchID))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation", "Некорректный match_id (b)")
+		return
+	}
+
+	tour, err := matches.SwapSlots(r.Context(), s.store, matches.SwapInput{
+		TournamentID: id,
+		A:            matches.SlotRef{MatchID: aMatch, Side: body.A.Side},
+		B:            matches.SlotRef{MatchID: bMatch, Side: body.B.Side},
+		ActorID:      actor.ID,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, matches.ErrTournamentNotFound):
+			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
+		case errors.Is(err, matches.ErrBracketMissing):
+			writeError(w, http.StatusConflict, "bracket_missing", "Сначала сгенерируйте сетку")
+		case errors.Is(err, matches.ErrBracketLocked):
+			writeError(w, http.StatusConflict, "bracket_locked", "Сетка заблокирована: уже есть сыгранные матчи")
+		case errors.Is(err, matches.ErrMatchNotFound):
+			writeError(w, http.StatusNotFound, "not_found", "Матч не найден")
+		case errors.Is(err, matches.ErrInvalidSlot):
+			writeError(w, http.StatusBadRequest, "validation", "Укажите два разных слота (side 1 или 2)")
+		case errors.Is(err, matches.ErrSlotNotSwappable):
+			writeError(w, http.StatusConflict, "slot_not_swappable", "Можно переставлять только посев первого раунда (игроков и пропуски)")
+		case errors.Is(err, matches.ErrMatchNotPlayable):
+			writeError(w, http.StatusConflict, "not_playable", "Матч нельзя изменить в текущем статусе")
+		default:
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось поменять слоты")
+		}
+		return
+	}
+
+	s.writeBracketPayload(w, r, tour, true)
 }
 
 func (s *Server) handlePublishBracket(w http.ResponseWriter, r *http.Request) {
