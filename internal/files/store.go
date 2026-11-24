@@ -2,6 +2,7 @@ package files
 
 import (
 	"bytes"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -22,11 +23,30 @@ import (
 )
 
 var (
-	ErrTooLarge     = errors.New("file too large")
-	ErrUnsupported  = errors.New("unsupported image type")
-	ErrEmpty        = errors.New("empty file")
-	ErrInvalidPath  = errors.New("invalid storage path")
+	ErrTooLarge    = errors.New("file too large")
+	ErrUnsupported = errors.New("unsupported image type")
+	ErrEmpty       = errors.New("empty file")
+	ErrInvalidPath = errors.New("invalid storage path")
+	ErrNoKey       = errors.New("uploads encryption key is required")
 )
+
+// encMagic marks files encrypted at rest. Legacy plaintext files have no
+// prefix and are still served as-is.
+var encMagic = []byte("PLYENC1\x00")
+
+// ReadSeekCloser is what Open returns: an image ready for http.ServeContent.
+type ReadSeekCloser interface {
+	io.Reader
+	io.Seeker
+	io.Closer
+}
+
+type memFile struct {
+	*bytes.Reader
+}
+
+func (memFile) Close() error { return nil }
+
 
 // AllowedMIME is the upload allow-list.
 var AllowedMIME = map[string]string{
@@ -49,15 +69,20 @@ type Meta struct {
 	AbsPath      string
 }
 
-// DiskStore writes uploads under root.
+// DiskStore writes uploads under root, encrypted with AES-256-GCM.
 type DiskStore struct {
 	Root     string
 	MaxBytes int64
 	Bucket   string
+	key      []byte
 }
 
-// NewDiskStore prepares the uploads directory.
-func NewDiskStore(root string, maxBytes int64) (*DiskStore, error) {
+// NewDiskStore prepares the uploads directory and derives a dedicated
+// encryption key from the application master key.
+func NewDiskStore(root string, maxBytes int64, masterKey []byte) (*DiskStore, error) {
+	if len(masterKey) != 32 {
+		return nil, ErrNoKey
+	}
 	if maxBytes <= 0 {
 		maxBytes = 5 << 20
 	}
@@ -65,8 +90,15 @@ func NewDiskStore(root string, maxBytes int64) (*DiskStore, error) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
 	}
-	return &DiskStore{Root: root, MaxBytes: maxBytes, Bucket: "uploads"}, nil
+	return &DiskStore{Root: root, MaxBytes: maxBytes, Bucket: "uploads", key: deriveUploadKey(masterKey)}, nil
 }
+
+func deriveUploadKey(master []byte) []byte {
+	mac := hmac.New(sha256.New, master)
+	mac.Write([]byte("pairly/uploads/v1"))
+	return mac.Sum(nil)
+}
+
 
 // Save validates and writes an image; returns metadata (file not yet in DB).
 func (s *DiskStore) Save(r io.Reader, originalName string) (Meta, error) {
@@ -130,8 +162,16 @@ func (s *DiskStore) Save(r io.Reader, originalName string) (Meta, error) {
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return Meta{}, err
 	}
+	blob, err := crypto.EncryptAESGCM(s.key, raw)
+	if err != nil {
+		return Meta{}, err
+	}
+	payload := make([]byte, 0, len(encMagic)+len(blob))
+	payload = append(payload, encMagic...)
+	payload = append(payload, blob...)
+
 	tmp := abs + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
+	if err := os.WriteFile(tmp, payload, 0o644); err != nil {
 		return Meta{}, err
 	}
 	if err := os.Rename(tmp, abs); err != nil {
@@ -153,7 +193,7 @@ func (s *DiskStore) Save(r io.Reader, originalName string) (Meta, error) {
 }
 
 // Open resolves a relative path under the store root (no traversal).
-func (s *DiskStore) Open(rel string) (*os.File, error) {
+func (s *DiskStore) Open(rel string) (ReadSeekCloser, error) {
 	clean := filepath.Clean("/" + strings.TrimPrefix(rel, "/"))
 	clean = strings.TrimPrefix(clean, "/")
 	if clean == "" || strings.Contains(clean, "..") {
@@ -164,7 +204,18 @@ func (s *DiskStore) Open(rel string) (*os.File, error) {
 	if err != nil || strings.HasPrefix(relToRoot, "..") {
 		return nil, ErrInvalidPath
 	}
-	return os.Open(abs)
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return nil, err
+	}
+	if bytes.HasPrefix(data, encMagic) {
+		plain, err := crypto.DecryptAESGCM(s.key, data[len(encMagic):])
+		if err != nil {
+			return nil, fmt.Errorf("decrypt upload: %w", err)
+		}
+		data = plain
+	}
+	return memFile{bytes.NewReader(data)}, nil
 }
 
 // ChecksumHex formats checksum for JSON.

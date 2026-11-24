@@ -46,7 +46,7 @@ func New(store *db.Store) *Server {
 func NewWithOptions(opts Options) *Server {
 	fileStore := opts.Files
 	if fileStore == nil && opts.Cfg.UploadsDir != "" {
-		fs, err := files.NewDiskStore(opts.Cfg.UploadsDir, opts.Cfg.MaxUploadBytes)
+		fs, err := files.NewDiskStore(opts.Cfg.UploadsDir, opts.Cfg.MaxUploadBytes, opts.Cfg.AppEncryptionKey)
 		if err != nil {
 			log.Printf("uploads: disabled (%v)", err)
 		} else {
@@ -120,6 +120,9 @@ func NewWithOptions(opts Options) *Server {
 		r.Post("/tournaments", s.handleCreateTournament)
 		r.Get("/tournaments/{id}", s.handleGetOrganizerTournament)
 		r.Patch("/tournaments/{id}", s.handleUpdateTournament)
+		r.Delete("/tournaments/{id}", s.handleDeleteTournament)
+		r.Post("/tournaments/{id}/visibility", s.handleSetTournamentVisibility)
+		r.Put("/tournaments/{id}/places", s.handleSetTournamentPlaces)
 		r.Post("/tournaments/{id}/registrations", s.handleOrganizerAddRegistration)
 		r.Patch("/tournaments/{id}/registrations/{regId}", s.handleUpdateOrganizerRegistrationStatus)
 		r.Get("/tournaments/{id}/bracket", s.handleGetOrganizerBracket)
@@ -153,6 +156,8 @@ func NewWithOptions(opts Options) *Server {
 		r.Put("/pages/{slug}", s.handleUpsertPage)
 		r.Post("/files", s.handleUploadFile)
 		r.Post("/tournaments/{id}/cover", s.handleAttachTournamentCover)
+		r.Post("/tournaments/{id}/images", s.handleUploadTournamentImage)
+		r.Delete("/tournaments/{id}/images/{imageID}", s.handleDeleteTournamentImage)
 		r.Post("/news/{id}/cover", s.handleAttachNewsCover)
 		r.Post("/events/{id}/cover", s.handleAttachEventCover)
 		r.Post("/players/{id}/avatar", s.handleAttachPlayerAvatar)

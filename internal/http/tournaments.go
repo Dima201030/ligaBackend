@@ -21,9 +21,9 @@ import (
 )
 
 const (
-	defaultVenueName    = "Крытые корты Mr. Pushkin"
-	defaultVenueAddress = "Волхонское шоссе, 79А"
-	defaultVenueCourts  = 7
+	defaultVenueName    = "Площадка организатора"
+	defaultVenueAddress = ""
+	defaultVenueCourts  = 1
 )
 
 type tournamentWriteRequest struct {
@@ -81,13 +81,20 @@ func (s *Server) handleListPublicTournaments(w http.ResponseWriter, r *http.Requ
 		year, _ = strconv.Atoi(y)
 	}
 
+	hidden, _ := s.hiddenTournamentIDs(r.Context())
+	places, _ := s.allTournamentPlaces(r.Context(), s.currentClubID(r))
 	out := make([]tournamentJSON, 0, len(rows))
 	for _, row := range rows {
+		if hidden[uuidString(row.ID)] {
+			continue
+		}
 		if !matchPublicFilters(row, statusFilter, category, typeFilter, year, query) {
 			continue
 		}
 		regs, _ := s.latestRegulations(r, row.ID)
-		out = append(out, tournamentFromRow(row, regs))
+		tj := tournamentFromRow(row, regs)
+		tj.Winners = places[uuidString(row.ID)]
+		out = append(out, tj)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tournaments": out})
 }
@@ -141,7 +148,8 @@ func (s *Server) handleGetPublicTournament(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турнир")
 		return
 	}
-	if tour.Status == sqlc.TournamentStatusDraft {
+	hidden, _ := s.isTournamentHidden(r.Context(), tour.ID)
+	if tour.Status == sqlc.TournamentStatusDraft || hidden {
 		user := auth.UserFromContext(r.Context())
 		if user == nil || !auth.IsOrganizerOrAbove(user.Role) {
 			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
@@ -158,9 +166,16 @@ func (s *Server) handleGetPublicTournament(w http.ResponseWriter, r *http.Reques
 	for _, row := range regs {
 		list = append(list, registrationFromListRow(row))
 	}
+	tj := tournamentFromRow(tour, regsText)
+	tj.Winners, _ = s.listTournamentPlaces(r.Context(), s.currentClubID(r), tour.ID)
+	images, err := s.listTournamentImages(r, tour.ID)
+	if err != nil {
+		images = []tournamentImageJSON{}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"tournament":    tournamentFromRow(tour, regsText),
+		"tournament":    tj,
 		"registrations": list,
+		"images":        images,
 	})
 }
 
@@ -170,10 +185,14 @@ func (s *Server) handleListOrganizerTournaments(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турниры")
 		return
 	}
+	hidden, _ := s.hiddenTournamentIDs(r.Context())
+	places, _ := s.allTournamentPlaces(r.Context(), s.currentClubID(r))
 	out := make([]tournamentJSON, 0, len(rows))
 	for _, row := range rows {
 		regs, _ := s.latestRegulations(r, row.ID)
 		tj := tournamentFromRow(row, regs)
+		tj.Hidden = hidden[uuidString(row.ID)]
+		tj.Winners = places[uuidString(row.ID)]
 		counts := s.registrationCounts(r, row.ID)
 		tj.ConfirmedCount = &counts.confirmed
 		tj.WaitlistCount = &counts.waitlist
@@ -219,9 +238,16 @@ func (s *Server) handleGetOrganizerTournament(w http.ResponseWriter, r *http.Req
 	tj := tournamentFromRow(tour, regsText)
 	tj.ConfirmedCount = &confirmed
 	tj.WaitlistCount = &waitlist
+	tj.Hidden, _ = s.isTournamentHidden(r.Context(), tour.ID)
+	tj.Winners, _ = s.listTournamentPlaces(r.Context(), s.currentClubID(r), tour.ID)
+	images, err := s.listTournamentImages(r, tour.ID)
+	if err != nil {
+		images = []tournamentImageJSON{}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"tournament":    tj,
 		"registrations": list,
+		"images":        images,
 		"counts": map[string]int32{
 			"confirmed": confirmed,
 			"pending":   pending,
