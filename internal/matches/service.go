@@ -684,6 +684,12 @@ func finishMatch(ctx context.Context, store *db.Store, in finishParams) (FinishO
 			out.TournamentWentLive = live
 		}
 	}
+	// Auto-fill empty podium slots from the bracket (never overwrites saved places).
+	if shouldSuggestPlaces(match) {
+		if err := maybeAutoFillMissingPlaces(ctx, tx, q, tour); err != nil {
+			return FinishOutcome{}, err
+		}
+	}
 
 	diff := in.AuditDiff
 	if diff == nil {
@@ -723,6 +729,22 @@ func isChampionshipFinal(m sqlc.Match) bool {
 		return false
 	case "main", "playoff", "":
 		return !m.NextMatchID.Valid
+	default:
+		return false
+	}
+}
+
+// shouldSuggestPlaces is true when finishing this match can change podium derivation.
+func shouldSuggestPlaces(m sqlc.Match) bool {
+	if isChampionshipFinal(m) {
+		return true
+	}
+	switch m.Stage {
+	case "third_place", "lower":
+		return true
+	case "main", "playoff":
+		// Semis feeding the final: shared bronze without a third-place match.
+		return m.NextMatchID.Valid
 	default:
 		return false
 	}

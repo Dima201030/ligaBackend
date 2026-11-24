@@ -44,6 +44,8 @@ type tournamentJSON struct {
 	BracketPublishedAt   *string               `json:"bracket_published_at,omitempty"`
 	BracketThirdPlace    *bool                 `json:"bracket_third_place,omitempty"`
 	Winners              []tournamentPlaceJSON `json:"winners,omitempty"`
+	SuggestedPlaces      []tournamentPlaceJSON `json:"suggested_places,omitempty"`
+	PlacesMismatch       bool                  `json:"places_mismatch,omitempty"`
 }
 
 type playerBriefJSON struct {

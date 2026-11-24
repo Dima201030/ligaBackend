@@ -10,6 +10,7 @@ import (
 
 	"github.com/Dima201030/ligaBackend/internal/auth"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
+	"github.com/Dima201030/ligaBackend/internal/rating"
 	"github.com/Dima201030/ligaBackend/internal/uuidx"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -47,14 +48,7 @@ func (s *Server) listTournamentPlaces(ctx context.Context, clubID, tournamentID 
 		if err := rows.Scan(&place, &raw); err != nil {
 			return nil, err
 		}
-		var ids []string
-		if raw != "" {
-			_ = json.Unmarshal([]byte(raw), &ids)
-		}
-		if ids == nil {
-			ids = []string{}
-		}
-		out = append(out, tournamentPlaceJSON{Place: int(place), PlayerIDs: ids})
+		out = append(out, tournamentPlaceJSON{Place: int(place), PlayerIDs: parsePlacePlayerIDs(raw)})
 	}
 	return out, rows.Err()
 }
@@ -79,17 +73,105 @@ func (s *Server) allTournamentPlaces(ctx context.Context, clubID pgtype.UUID) (m
 		if err := rows.Scan(&id, &place, &raw); err != nil {
 			return nil, err
 		}
-		var ids []string
-		if raw != "" {
-			_ = json.Unmarshal([]byte(raw), &ids)
-		}
-		if ids == nil {
-			ids = []string{}
-		}
 		key := uuidString(id)
-		out[key] = append(out[key], tournamentPlaceJSON{Place: int(place), PlayerIDs: ids})
+		out[key] = append(out[key], tournamentPlaceJSON{Place: int(place), PlayerIDs: parsePlacePlayerIDs(raw)})
 	}
 	return out, rows.Err()
+}
+
+func parsePlacePlayerIDs(raw string) []string {
+	var ids []string
+	if raw != "" {
+		_ = json.Unmarshal([]byte(raw), &ids)
+	}
+	if ids == nil {
+		return []string{}
+	}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		n := uuidx.Normalize(id)
+		if n != "" {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func podiumToJSON(slots []rating.PodiumPlace) []tournamentPlaceJSON {
+	out := make([]tournamentPlaceJSON, 0, len(slots))
+	for _, slot := range slots {
+		ids := make([]string, 0, len(slot.PlayerIDs))
+		for _, id := range slot.PlayerIDs {
+			s := uuidString(id)
+			if s != "" {
+				ids = append(ids, s)
+			}
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		out = append(out, tournamentPlaceJSON{Place: slot.Place, PlayerIDs: ids})
+	}
+	return out
+}
+
+func placesToPodium(places []tournamentPlaceJSON) []rating.PodiumPlace {
+	out := make([]rating.PodiumPlace, 0, len(places))
+	for _, p := range places {
+		ids := make([]pgtype.UUID, 0, len(p.PlayerIDs))
+		for _, raw := range p.PlayerIDs {
+			id, err := parseUUID(raw)
+			if err != nil {
+				continue
+			}
+			ids = append(ids, id)
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		out = append(out, rating.PodiumPlace{Place: p.Place, PlayerIDs: ids})
+	}
+	return out
+}
+
+func (s *Server) suggestedTournamentPlaces(ctx context.Context, tour sqlc.Tournament) ([]tournamentPlaceJSON, error) {
+	matches, err := s.store.Queries.ListMatchesByTournament(ctx, tour.ID)
+	if err != nil {
+		return nil, err
+	}
+	sides, err := s.store.Queries.ListMatchSidesByTournament(ctx, tour.ID)
+	if err != nil {
+		return nil, err
+	}
+	return podiumToJSON(rating.DerivePodiumPlaces(tour.Format, matches, sides)), nil
+}
+
+func (s *Server) attachPlacesSuggestion(ctx context.Context, tour sqlc.Tournament, tj *tournamentJSON) {
+	suggested, err := s.suggestedTournamentPlaces(ctx, tour)
+	if err != nil {
+		return
+	}
+	tj.SuggestedPlaces = suggested
+	tj.PlacesMismatch = rating.PodiumMismatch(placesToPodium(tj.Winners), placesToPodium(suggested))
+}
+
+// duplicatePlayerAcrossPlaces reports whether any player_id appears on more than one place
+// (or twice inside one place).
+func duplicatePlayerAcrossPlaces(places []tournamentPlaceJSON) bool {
+	seen := map[string]struct{}{}
+	for _, place := range places {
+		for _, id := range place.PlayerIDs {
+			key := uuidx.Normalize(id)
+			if key == "" {
+				continue
+			}
+			if _, ok := seen[key]; ok {
+				return true
+			}
+			seen[key] = struct{}{}
+		}
+	}
+	return false
 }
 
 func (s *Server) handleSetTournamentPlaces(w http.ResponseWriter, r *http.Request) {
@@ -103,7 +185,8 @@ func (s *Server) handleSetTournamentPlaces(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор турнира")
 		return
 	}
-	if _, err := s.loadClubTournament(r, tournamentID); err != nil {
+	tour, err := s.loadClubTournament(r, tournamentID)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
 			return
@@ -122,7 +205,7 @@ func (s *Server) handleSetTournamentPlaces(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	seen := map[int]bool{}
+	seenPlace := map[int]bool{}
 	places := make([]tournamentPlaceJSON, 0, len(req.Places))
 	allIDs := make([]pgtype.UUID, 0, 6)
 	for _, entry := range req.Places {
@@ -130,7 +213,7 @@ func (s *Server) handleSetTournamentPlaces(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusBadRequest, "validation", "Место должно быть от 1 до 3")
 			return
 		}
-		if seen[entry.Place] {
+		if seenPlace[entry.Place] {
 			writeError(w, http.StatusBadRequest, "validation", "Место указано дважды")
 			return
 		}
@@ -138,7 +221,7 @@ func (s *Server) handleSetTournamentPlaces(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusBadRequest, "validation", "На одном месте не больше двух игроков")
 			return
 		}
-		seen[entry.Place] = true
+		seenPlace[entry.Place] = true
 		ids := make([]string, 0, len(entry.PlayerIDs))
 		for _, raw := range entry.PlayerIDs {
 			raw = strings.TrimSpace(raw)
@@ -154,6 +237,12 @@ func (s *Server) handleSetTournamentPlaces(w http.ResponseWriter, r *http.Reques
 			allIDs = append(allIDs, parsed)
 		}
 		places = append(places, tournamentPlaceJSON{Place: entry.Place, PlayerIDs: ids})
+	}
+
+	if duplicatePlayerAcrossPlaces(places) {
+		writeError(w, http.StatusBadRequest, "validation",
+			"Один игрок не может занимать несколько мест сразу")
+		return
 	}
 
 	clubID := s.currentClubID(r)
@@ -247,5 +336,10 @@ func (s *Server) handleSetTournamentPlaces(w http.ResponseWriter, r *http.Reques
 			out = append(out, place)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"places": out})
+	suggested, _ := s.suggestedTournamentPlaces(r.Context(), tour)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"places":           out,
+		"suggested_places": suggested,
+		"places_mismatch":  rating.PodiumMismatch(placesToPodium(out), placesToPodium(suggested)),
+	})
 }

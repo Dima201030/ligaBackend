@@ -240,6 +240,7 @@ func (s *Server) handleGetOrganizerTournament(w http.ResponseWriter, r *http.Req
 	tj.WaitlistCount = &waitlist
 	tj.Hidden, _ = s.isTournamentHidden(r.Context(), tour.ID)
 	tj.Winners, _ = s.listTournamentPlaces(r.Context(), s.currentClubID(r), tour.ID)
+	s.attachPlacesSuggestion(r.Context(), tour, &tj)
 	images, err := s.listTournamentImages(r, tour.ID)
 	if err != nil {
 		images = []tournamentImageJSON{}
