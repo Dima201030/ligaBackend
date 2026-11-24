@@ -134,6 +134,42 @@ func (s *Server) handleAttachTournamentCover(w http.ResponseWriter, r *http.Requ
 	s.attachCover(w, r, "tournament")
 }
 
+func (s *Server) handleClearTournamentCover(w http.ResponseWriter, r *http.Request) {
+	actor := auth.UserFromContext(r.Context())
+	if actor == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
+		return
+	}
+	tournamentID, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор турнира")
+		return
+	}
+	if _, err := s.loadClubTournament(r, tournamentID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турнир")
+		return
+	}
+	row, err := s.store.Queries.ClearTournamentCover(r.Context(), sqlc.ClearTournamentCoverParams{
+		ClubID: s.currentClubID(r),
+		ID:     tournamentID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось удалить обложку")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"cover_url": textPtr(row.CoverUrl),
+	})
+}
+
 func (s *Server) handleAttachNewsCover(w http.ResponseWriter, r *http.Request) {
 	s.attachCover(w, r, "news")
 }
@@ -163,6 +199,17 @@ func (s *Server) attachCover(w http.ResponseWriter, r *http.Request, kind string
 		return
 	}
 
+	if kind == "tournament" {
+		if _, err := s.loadClubTournament(r, entityID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турнир")
+			return
+		}
+	}
+
 	fileRow, url, err := s.uploadAndCreate(r, actor.ID)
 	if err != nil {
 		mapUploadError(w, err)
@@ -172,6 +219,7 @@ func (s *Server) attachCover(w http.ResponseWriter, r *http.Request, kind string
 	switch kind {
 	case "tournament":
 		row, err := s.store.Queries.SetTournamentCover(r.Context(), sqlc.SetTournamentCoverParams{
+			ClubID:      s.currentClubID(r),
 			ID:          entityID,
 			CoverFileID: fileRow.ID,
 			CoverUrl:    pgtype.Text{String: url, Valid: true},

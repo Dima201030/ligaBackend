@@ -156,6 +156,7 @@ func NewWithOptions(opts Options) *Server {
 		r.Put("/pages/{slug}", s.handleUpsertPage)
 		r.Post("/files", s.handleUploadFile)
 		r.Post("/tournaments/{id}/cover", s.handleAttachTournamentCover)
+		r.Delete("/tournaments/{id}/cover", s.handleClearTournamentCover)
 		r.Post("/tournaments/{id}/images", s.handleUploadTournamentImage)
 		r.Delete("/tournaments/{id}/images/{imageID}", s.handleDeleteTournamentImage)
 		r.Post("/news/{id}/cover", s.handleAttachNewsCover)
