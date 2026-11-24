@@ -16,6 +16,7 @@ import (
 	"github.com/Dima201030/ligaBackend/internal/matches"
 	"github.com/Dima201030/ligaBackend/internal/rating"
 	"github.com/Dima201030/ligaBackend/internal/tournaments"
+	"github.com/Dima201030/ligaBackend/internal/uuidx"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -378,7 +379,7 @@ func sideByNum(sides []sqlc.MatchSide, side int16) sqlc.MatchSide {
 }
 
 func uuidEqual(a, b pgtype.UUID) bool {
-	return a.Valid && b.Valid && a.Bytes == b.Bytes
+	return uuidx.Equal(a, b)
 }
 
 func TestParallelScoreConflict(t *testing.T) {

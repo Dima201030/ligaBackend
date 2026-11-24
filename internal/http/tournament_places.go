@@ -10,6 +10,7 @@ import (
 
 	"github.com/Dima201030/ligaBackend/internal/auth"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
+	"github.com/Dima201030/ligaBackend/internal/uuidx"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -157,19 +158,9 @@ func (s *Server) handleSetTournamentPlaces(w http.ResponseWriter, r *http.Reques
 
 	clubID := s.currentClubID(r)
 	if len(allIDs) > 0 {
-		// Encode as text[] and cast in SQL — pgx encoding of []pgtype.UUID into
-		// ANY($n) without an explicit ::uuid[] cast has failed on Pi with
-		// «Не удалось проверить игроков» (operator/array bind errors).
-		idTexts := make([]string, 0, len(allIDs))
-		unique := map[string]bool{}
-		for _, id := range allIDs {
-			key := uuidString(id)
-			if key == "" || unique[key] {
-				continue
-			}
-			unique[key] = true
-			idTexts = append(idTexts, key)
-		}
+		// Bind canonical text[] + explicit ::uuid[] cast (uuidx.TextArray).
+		// Raw []pgtype.UUID into ANY($n) without cast failed on Pi (RSG places 500).
+		idTexts := uuidx.TextArray(allIDs)
 		var count int
 		if err := s.store.Pool.QueryRow(r.Context(), `
 			SELECT count(DISTINCT pid) FROM (
@@ -191,7 +182,7 @@ func (s *Server) handleSetTournamentPlaces(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusInternalServerError, "internal", "Не удалось проверить игроков")
 			return
 		}
-		if count != len(unique) {
+		if count != len(idTexts) {
 			writeError(w, http.StatusBadRequest, "validation", "Игрок должен быть участником этого турнира")
 			return
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/Dima201030/ligaBackend/internal/db"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
 	"github.com/Dima201030/ligaBackend/internal/rating"
+	"github.com/Dima201030/ligaBackend/internal/uuidx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -1280,15 +1281,9 @@ func recomputeByeAdvancement(ctx context.Context, q *sqlc.Queries, matchID pgtyp
 }
 
 func uuidString(id pgtype.UUID) string {
-	if !id.Valid {
-		return ""
-	}
-	b := id.Bytes
-	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+	return uuidx.String(id)
 }
 
 func parseUUID(s string) pgtype.UUID {
-	var id pgtype.UUID
-	_ = id.Scan(s)
-	return id
+	return uuidx.ParseOrZero(s)
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/Dima201030/ligaBackend/internal/db"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
+	"github.com/Dima201030/ligaBackend/internal/uuidx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -381,5 +382,5 @@ func UpdateRegistrationStatus(
 }
 
 func uuidEqual(a, b pgtype.UUID) bool {
-	return a.Valid && b.Valid && a.Bytes == b.Bytes
+	return uuidx.Equal(a, b)
 }
