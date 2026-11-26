@@ -11,6 +11,58 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearTournamentCover = `-- name: ClearTournamentCover :one
+UPDATE tournaments
+SET cover_file_id = NULL,
+    cover_url = NULL,
+    updated_at = now()
+WHERE club_id = $1 AND id = $2
+RETURNING id, club_id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
+`
+
+type ClearTournamentCoverParams struct {
+	ClubID pgtype.UUID
+	ID     pgtype.UUID
+}
+
+func (q *Queries) ClearTournamentCover(ctx context.Context, arg ClearTournamentCoverParams) (Tournament, error) {
+	row := q.db.QueryRow(ctx, clearTournamentCover, arg.ClubID, arg.ID)
+	var i Tournament
+	err := row.Scan(
+		&i.ID,
+		&i.ClubID,
+		&i.Slug,
+		&i.Title,
+		&i.Description,
+		&i.Type,
+		&i.Category,
+		&i.Surface,
+		&i.Format,
+		&i.Status,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.RegistrationOpensAt,
+		&i.RegistrationClosesAt,
+		&i.VenueName,
+		&i.VenueAddress,
+		&i.VenueCourts,
+		&i.VenueSurface,
+		&i.EntryFee,
+		&i.MaxParticipants,
+		&i.CoverUrl,
+		&i.CoverFileID,
+		&i.Season,
+		&i.CreatedBy,
+		&i.BracketStatus,
+		&i.BracketPublishedAt,
+		&i.BracketVersion,
+		&i.BracketThirdPlace,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createFile = `-- name: CreateFile :one
 INSERT INTO files (
     club_id, bucket, path, original_name, mime, size, width, height, checksum, uploaded_by
@@ -207,7 +259,7 @@ SET avatar_file_id = $2,
     avatar_url = $3,
     updated_at = now()
 WHERE user_id = $1
-RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, birth_date, verification_status, verified_at, verified_by, verification_note, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, birth_date, verification_status, verified_at, verified_by, verification_note, rating, points, singles_points, doubles_points, matches_played, wins, losses, notification_prefs, created_at, updated_at
 `
 
 type SetProfileAvatarParams struct {
@@ -243,6 +295,7 @@ func (q *Queries) SetProfileAvatar(ctx context.Context, arg SetProfileAvatarPara
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
+		&i.NotificationPrefs,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -266,59 +319,12 @@ type SetTournamentCoverParams struct {
 }
 
 func (q *Queries) SetTournamentCover(ctx context.Context, arg SetTournamentCoverParams) (Tournament, error) {
-	row := q.db.QueryRow(ctx, setTournamentCover, arg.ClubID, arg.ID, arg.CoverFileID, arg.CoverUrl)
-	var i Tournament
-	err := row.Scan(
-		&i.ID,
-		&i.ClubID,
-		&i.Slug,
-		&i.Title,
-		&i.Description,
-		&i.Type,
-		&i.Category,
-		&i.Surface,
-		&i.Format,
-		&i.Status,
-		&i.StartsAt,
-		&i.EndsAt,
-		&i.RegistrationOpensAt,
-		&i.RegistrationClosesAt,
-		&i.VenueName,
-		&i.VenueAddress,
-		&i.VenueCourts,
-		&i.VenueSurface,
-		&i.EntryFee,
-		&i.MaxParticipants,
-		&i.CoverUrl,
-		&i.CoverFileID,
-		&i.Season,
-		&i.CreatedBy,
-		&i.BracketStatus,
-		&i.BracketPublishedAt,
-		&i.BracketVersion,
-		&i.BracketThirdPlace,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+	row := q.db.QueryRow(ctx, setTournamentCover,
+		arg.ClubID,
+		arg.ID,
+		arg.CoverFileID,
+		arg.CoverUrl,
 	)
-	return i, err
-}
-
-const clearTournamentCover = `-- name: ClearTournamentCover :one
-UPDATE tournaments
-SET cover_file_id = NULL,
-    cover_url = NULL,
-    updated_at = now()
-WHERE club_id = $1 AND id = $2
-RETURNING id, club_id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at
-`
-
-type ClearTournamentCoverParams struct {
-	ClubID pgtype.UUID
-	ID     pgtype.UUID
-}
-
-func (q *Queries) ClearTournamentCover(ctx context.Context, arg ClearTournamentCoverParams) (Tournament, error) {
-	row := q.db.QueryRow(ctx, clearTournamentCover, arg.ClubID, arg.ID)
 	var i Tournament
 	err := row.Scan(
 		&i.ID,
