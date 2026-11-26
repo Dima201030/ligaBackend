@@ -50,3 +50,18 @@ func TestEncodeNotificationPrefsRoundTrip(t *testing.T) {
 		t.Fatalf("round-trip failed: %+v", got)
 	}
 }
+
+func TestTournamentRegistrationEmailRespectsTournamentsPref(t *testing.T) {
+	if !allowsTournamentRegistrationEmails(nil) {
+		t.Fatal("nil prefs should default to allow")
+	}
+	if !allowsTournamentRegistrationEmails([]byte(`{}`)) {
+		t.Fatal("empty object should keep tournaments default true")
+	}
+	if !allowsTournamentRegistrationEmails([]byte(`{"tournaments":true,"news":false}`)) {
+		t.Fatal("explicit true should allow")
+	}
+	if allowsTournamentRegistrationEmails([]byte(`{"tournaments":false}`)) {
+		t.Fatal("tournaments=false must skip outbox")
+	}
+}

@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/Dima201030/ligaBackend/internal/auth"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
+	"github.com/Dima201030/ligaBackend/internal/mail"
 	"github.com/Dima201030/ligaBackend/internal/rating"
 	"github.com/Dima201030/ligaBackend/internal/tournaments"
 	"github.com/go-chi/chi/v5"
@@ -381,7 +384,8 @@ func (s *Server) handleUpdateOrganizerRegistrationStatus(w http.ResponseWriter, 
 		writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор заявки")
 		return
 	}
-	if _, err := s.loadClubTournament(r, tournamentID); err != nil {
+	tour, err := s.loadClubTournament(r, tournamentID)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
 			return
@@ -401,7 +405,18 @@ func (s *Server) handleUpdateOrganizerRegistrationStatus(w http.ResponseWriter, 
 		return
 	}
 
-	reg, err := tournaments.UpdateRegistrationStatus(r.Context(), s.store, tournamentID, regID, status)
+	ctx := r.Context()
+	before, err := s.store.Queries.GetRegistrationByID(ctx, regID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Заявка не найдена")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить заявку")
+		return
+	}
+
+	reg, promoted, err := tournaments.UpdateRegistrationStatus(ctx, s.store, tournamentID, regID, status)
 	if err != nil {
 		switch {
 		case errors.Is(err, tournaments.ErrInvalidStatus):
@@ -418,7 +433,48 @@ func (s *Server) handleUpdateOrganizerRegistrationStatus(w http.ResponseWriter, 
 		return
 	}
 
+	if before.Status != reg.Status {
+		s.enqueueTournamentRegistrationEmail(ctx, tour, reg)
+	}
+	if promoted != nil {
+		s.enqueueTournamentRegistrationEmail(ctx, tour, *promoted)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"registration": registrationFromModel(reg)})
+}
+
+// enqueueTournamentRegistrationEmail queues confirm/reject/waitlist mail for a
+// tournament registration when the player's notification_prefs.tournaments is on
+// (default true). Disabled prefs skip outbox entirely.
+func (s *Server) enqueueTournamentRegistrationEmail(ctx context.Context, tour sqlc.Tournament, reg sqlc.Registration) {
+	template, ok := mail.TournamentRegistrationTemplate(string(reg.Status))
+	if !ok {
+		return
+	}
+	var prefsRaw []byte
+	if prof, err := s.store.Queries.GetProfileByUserID(ctx, reg.PlayerID); err == nil {
+		prefsRaw = prof.NotificationPrefs
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		log.Printf("tournament registration email: load prefs: %v", err)
+	}
+	if !allowsTournamentRegistrationEmails(prefsRaw) {
+		log.Printf("tournament registration email: skipped template=%s (tournaments prefs off)", template)
+		return
+	}
+	user, err := s.store.Queries.GetUserByID(ctx, reg.PlayerID)
+	if err != nil {
+		log.Printf("tournament registration email: load user: %v", err)
+		return
+	}
+	if err := mail.Enqueue(ctx, s.store, s.cfg, emailString(user.Email), template, map[string]any{
+		"first_name":       user.FirstName,
+		"last_name":        user.LastName,
+		"tournament_title": tour.Title,
+		"tournament_slug":  tour.Slug,
+		"status":           string(reg.Status),
+	}); err != nil {
+		log.Printf("tournament registration email: enqueue template=%s: %v", template, err)
+	}
 }
 
 func (s *Server) handleCreateTournament(w http.ResponseWriter, r *http.Request) {

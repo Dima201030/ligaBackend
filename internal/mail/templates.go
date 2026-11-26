@@ -76,6 +76,27 @@ func Render(template string, payload []byte) (Message, error) {
 		}
 		body += "\nЕсли вы не запрашивали сброс — игнорируйте письмо.\n"
 		return Message{Subject: "Сброс пароля — Pairly", TextBody: body}, nil
+	case "tournament_registration_confirmed":
+		title := str(data, "tournament_title")
+		body := fmt.Sprintf(
+			"Здравствуйте%s!\n\nВаша заявка на турнир%s подтверждена. Ждём вас на корте.\n",
+			greet(name), tournamentPhrase(title),
+		)
+		return Message{Subject: registrationSubject("Заявка подтверждена", title), TextBody: body}, nil
+	case "tournament_registration_rejected":
+		title := str(data, "tournament_title")
+		body := fmt.Sprintf(
+			"Здравствуйте%s!\n\nК сожалению, заявка на турнир%s отклонена. Свяжитесь с организатором, если нужны подробности.\n",
+			greet(name), tournamentPhrase(title),
+		)
+		return Message{Subject: registrationSubject("Заявка отклонена", title), TextBody: body}, nil
+	case "tournament_registration_waitlist":
+		title := str(data, "tournament_title")
+		body := fmt.Sprintf(
+			"Здравствуйте%s!\n\nВы в листе ожидания турнира%s. Если освободится место, мы сообщим.\n",
+			greet(name), tournamentPhrase(title),
+		)
+		return Message{Subject: registrationSubject("Лист ожидания", title), TextBody: body}, nil
 	default:
 		return Message{
 			Subject:  "Уведомление — Pairly",
@@ -102,4 +123,33 @@ func greet(firstName string) string {
 		return ""
 	}
 	return ", " + firstName
+}
+
+func tournamentPhrase(title string) string {
+	if title == "" {
+		return ""
+	}
+	return " «" + title + "»"
+}
+
+func registrationSubject(prefix, title string) string {
+	if title == "" {
+		return prefix + " — Pairly"
+	}
+	return prefix + " — " + title
+}
+
+// TournamentRegistrationTemplate maps a registration status to an outbox template.
+// pending/cancelled have no player-facing mail.
+func TournamentRegistrationTemplate(status string) (string, bool) {
+	switch strings.TrimSpace(status) {
+	case "confirmed":
+		return "tournament_registration_confirmed", true
+	case "rejected":
+		return "tournament_registration_rejected", true
+	case "waitlist":
+		return "tournament_registration_waitlist", true
+	default:
+		return "", false
+	}
 }
