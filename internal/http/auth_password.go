@@ -18,6 +18,7 @@ import (
 const (
 	passwordResetTTL      = time.Hour
 	forgotRateLimitKey    = "forgot:"
+	resetRateLimitKey     = "reset:"
 	resendConfirmLimitKey = "resend-confirm:"
 )
 
@@ -108,8 +109,8 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 		"first_name": user.FirstName,
 		"token":      token,
 	}
-	if s.cfg.PublicBaseURL != "" {
-		payload["reset_url"] = s.cfg.PublicBaseURL + "/api/auth/reset-password?token=" + token
+	if url := s.cfg.PasswordResetURL(token); url != "" {
+		payload["reset_url"] = url
 	}
 	_ = mail.Enqueue(ctx, s.store, s.cfg, emailString(user.Email), "password_reset", payload)
 
@@ -120,6 +121,25 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		token := strings.TrimSpace(r.URL.Query().Get("token"))
+		// Old mail links hit the API; send browsers to the UI reset page when configured.
+		if token != "" && s.cfg.FrontBaseURL != "" && prefersHTML(r) {
+			http.Redirect(w, r, s.cfg.FrontBaseURL+"/reset-password?token="+token, http.StatusFound)
+			return
+		}
+		if token == "" {
+			writeError(w, http.StatusBadRequest, "validation", "Укажите токен сброса")
+			return
+		}
+		// Non-browser clients get a hint that POST with new_password is required.
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":      true,
+			"message": "Отправьте POST с token и new_password",
+		})
+		return
+	}
+
 	var req resetPasswordRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Некорректное тело запроса")
@@ -136,6 +156,12 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	if utf8.RuneCountInString(password) < minPasswordLen {
 		writeError(w, http.StatusBadRequest, "validation", "Пароль должен быть не короче 8 символов")
+		return
+	}
+
+	ip := remoteIPString(r)
+	if !s.limiter.Allow(resetRateLimitKey + ip) {
+		writeError(w, http.StatusTooManyRequests, "rate_limited", "Слишком много попыток. Подождите несколько минут.")
 		return
 	}
 

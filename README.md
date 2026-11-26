@@ -40,6 +40,7 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | GET/POST | `/api/auth/confirm-email` | Подтверждение email по токену |
 | POST | `/api/auth/resend-confirm` | Повтор письма подтверждения (анти-enumeration) |
 | POST | `/api/auth/forgot-password` | Запрос сброса пароля → outbox |
+| GET | `/api/auth/reset-password` | Редирект браузера на UI `/reset-password` (если `FRONT_BASE_URL`) |
 | POST | `/api/auth/reset-password` | Новый пароль по токену (сессии отзываются) |
 | GET | `/api/organizer/applications` | Список заявок (organizer+) |
 | POST | `/api/organizer/applications/{id}/approve` | Approve + правка ФИО/уровня |
