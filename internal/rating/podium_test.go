@@ -52,7 +52,7 @@ func TestDerivePodiumKnockoutFinalAndThird(t *testing.T) {
 		side(40, 1, c), side(40, 2, b),
 	}
 	got := DerivePodiumPlaces(sqlc.TournamentFormatGroupsPlayoff, matches, sides)
-	want := map[int][]pgtype.UUID{1: {d}, 2: {a}, 3: {c}}
+	want := map[int][]pgtype.UUID{1: {d}, 2: {a}, 3: {c}, 4: {b}}
 	assertPodium(t, got, want)
 }
 
@@ -100,7 +100,8 @@ func TestDerivePodiumSharedBronzeWithoutThirdMatch(t *testing.T) {
 		side(30, 1, a), side(30, 2, d),
 	}
 	got := DerivePodiumPlaces(sqlc.TournamentFormatOlympic, matches, sides)
-	assertPodium(t, got, map[int][]pgtype.UUID{1: {a}, 2: {d}, 3: {b, c}})
+	// Stable UUID order: b before c → 3rd=b, 4th=c (no shared bronze slot).
+	assertPodium(t, got, map[int][]pgtype.UUID{1: {a}, 2: {d}, 3: {b}, 4: {c}})
 }
 
 func TestDerivePodiumNoDuplicatePlayers(t *testing.T) {

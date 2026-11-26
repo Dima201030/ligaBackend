@@ -29,7 +29,7 @@ type tournamentPlacesRequest struct {
 	} `json:"places"`
 }
 
-// listTournamentPlaces returns podium places for one tournament, ordered 1..3.
+// listTournamentPlaces returns podium places for one tournament, ordered 1..4.
 func (s *Server) listTournamentPlaces(ctx context.Context, clubID, tournamentID pgtype.UUID) ([]tournamentPlaceJSON, error) {
 	rows, err := s.store.Pool.Query(ctx, `
 		SELECT place, array_to_json(player_ids)::text
@@ -41,7 +41,7 @@ func (s *Server) listTournamentPlaces(ctx context.Context, clubID, tournamentID 
 	}
 	defer rows.Close()
 
-	out := make([]tournamentPlaceJSON, 0, 3)
+	out := make([]tournamentPlaceJSON, 0, 4)
 	for rows.Next() {
 		var place int16
 		var raw string
@@ -200,17 +200,17 @@ func (s *Server) handleSetTournamentPlaces(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "invalid_body", "Некорректное тело запроса")
 		return
 	}
-	if len(req.Places) > 3 {
-		writeError(w, http.StatusBadRequest, "validation", "Можно указать не больше трёх мест")
+	if len(req.Places) > 4 {
+		writeError(w, http.StatusBadRequest, "validation", "Можно указать не больше четырёх мест")
 		return
 	}
 
 	seenPlace := map[int]bool{}
 	places := make([]tournamentPlaceJSON, 0, len(req.Places))
-	allIDs := make([]pgtype.UUID, 0, 6)
+	allIDs := make([]pgtype.UUID, 0, 8)
 	for _, entry := range req.Places {
-		if entry.Place < 1 || entry.Place > 3 {
-			writeError(w, http.StatusBadRequest, "validation", "Место должно быть от 1 до 3")
+		if entry.Place < 1 || entry.Place > 4 {
+			writeError(w, http.StatusBadRequest, "validation", "Место должно быть от 1 до 4")
 			return
 		}
 		if seenPlace[entry.Place] {
