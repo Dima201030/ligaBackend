@@ -255,6 +255,20 @@ func (q *Queries) GetClubMembershipByID(ctx context.Context, arg GetClubMembersh
 	return i, err
 }
 
+const leaveAllActiveClubMemberships = `-- name: LeaveAllActiveClubMemberships :exec
+UPDATE club_memberships
+SET status = 'left',
+    updated_at = now()
+WHERE user_id = $1
+  AND status = 'active'
+`
+
+// Account erasure: soft-leave every active club membership for the user.
+func (q *Queries) LeaveAllActiveClubMemberships(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, leaveAllActiveClubMemberships, userID)
+	return err
+}
+
 const listActiveClubs = `-- name: ListActiveClubs :many
 SELECT id, slug, name, city, status, settings, created_at, updated_at FROM clubs
 WHERE status = 'active'

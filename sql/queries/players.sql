@@ -241,6 +241,7 @@ SELECT
 FROM profiles p
 JOIN users u ON u.id = p.user_id
 WHERE p.club_id = sqlc.arg(club_id)
+  AND p.player_status IN ('active', 'blocked')
   AND (sqlc.narg(user_status)::text IS NULL OR u.status = sqlc.narg(user_status)::user_status)
   AND (sqlc.narg(category)::text IS NULL OR p.level = sqlc.narg(category))
 ORDER BY u.created_at DESC

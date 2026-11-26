@@ -142,7 +142,7 @@ UPDATE users
 SET email = NULL,
     password_hash = $2,
     first_name = 'Удалённый',
-    last_name = 'профиль',
+    last_name = 'аккаунт',
     status = 'rejected',
     email_verified_at = NULL,
     updated_at = now()
@@ -170,4 +170,6 @@ JOIN users u ON u.id = p.user_id
 WHERE p.club_id = $1
   AND u.email IS NULL
   AND u.role = 'player'
+  AND u.status = 'approved'
+  AND p.player_status = 'active'
 ORDER BY u.last_name ASC, u.first_name ASC;

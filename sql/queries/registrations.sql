@@ -59,6 +59,15 @@ WHERE tournament_id = $1
   AND status IN ('pending', 'confirmed', 'waitlist')
 RETURNING *;
 
+-- name: CancelActiveRegistrationsForPlayer :exec
+-- Account erasure: drop pending/confirmed/waitlist entries everywhere.
+UPDATE registrations
+SET status = 'cancelled',
+    cancelled_at = now(),
+    waitlist_position = NULL
+WHERE player_id = $1
+  AND status IN ('pending', 'confirmed', 'waitlist');
+
 -- name: LockOldestWaitlist :one
 SELECT * FROM registrations
 WHERE tournament_id = $1 AND status = 'waitlist'

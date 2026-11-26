@@ -11,6 +11,21 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const cancelActiveRegistrationsForPlayer = `-- name: CancelActiveRegistrationsForPlayer :exec
+UPDATE registrations
+SET status = 'cancelled',
+    cancelled_at = now(),
+    waitlist_position = NULL
+WHERE player_id = $1
+  AND status IN ('pending', 'confirmed', 'waitlist')
+`
+
+// Account erasure: drop pending/confirmed/waitlist entries everywhere.
+func (q *Queries) CancelActiveRegistrationsForPlayer(ctx context.Context, playerID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, cancelActiveRegistrationsForPlayer, playerID)
+	return err
+}
+
 const cancelRegistration = `-- name: CancelRegistration :one
 UPDATE registrations
 SET status = 'cancelled',
