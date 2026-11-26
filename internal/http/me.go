@@ -8,22 +8,22 @@ import (
 )
 
 type meProfileJSON struct {
-	Slug                 string  `json:"slug"`
-	City                 string  `json:"city"`
-	Bio                  string  `json:"bio"`
-	AvatarURL            *string `json:"avatar_url,omitempty"`
-	Status               string  `json:"status"`
-	BirthDate            *string `json:"birth_date,omitempty"`
-	VerificationStatus   string  `json:"verification_status"`
-	VerifiedAt           *string `json:"verified_at,omitempty"`
-	Rating               float64 `json:"rating"`
-	Points               int32   `json:"points"`
-	SinglesPoints        int32   `json:"singles_points"`
-	DoublesPoints        int32   `json:"doubles_points"`
-	MatchesPlayed        int32   `json:"matches_played"`
-	Wins                 int32   `json:"wins"`
-	Losses               int32   `json:"losses"`
-	MemberSince          string  `json:"member_since,omitempty"`
+	Slug               string  `json:"slug"`
+	City               string  `json:"city"`
+	Bio                string  `json:"bio"`
+	AvatarURL          *string `json:"avatar_url,omitempty"`
+	Status             string  `json:"status"`
+	BirthDate          *string `json:"birth_date,omitempty"`
+	VerificationStatus string  `json:"verification_status"`
+	VerifiedAt         *string `json:"verified_at,omitempty"`
+	Rating             float64 `json:"rating"`
+	Points             int32   `json:"points"`
+	SinglesPoints      int32   `json:"singles_points"`
+	DoublesPoints      int32   `json:"doubles_points"`
+	MatchesPlayed      int32   `json:"matches_played"`
+	Wins               int32   `json:"wins"`
+	Losses             int32   `json:"losses"`
+	MemberSince        string  `json:"member_since,omitempty"`
 }
 
 type meRegistrationJSON struct {
@@ -53,6 +53,15 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		out["profile"] = meProfileFromRow(prof)
 		out["notifications"] = decodeNotificationPrefs(prof.NotificationPrefs)
+	}
+	access, clubRole, accessErr := s.actorOrganizerAccess(r)
+	if accessErr != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось проверить права клуба")
+		return
+	}
+	out["organizer_access"] = access
+	if clubRole != "" {
+		out["club_role"] = string(clubRole)
 	}
 	writeJSON(w, http.StatusOK, out)
 }

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/Dima201030/ligaBackend/internal/auth"
@@ -32,13 +33,25 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 
 func (s *Server) requireOrganizer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user := auth.UserFromContext(r.Context())
-		if user == nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
+		if _, err := s.requireClubOrganizerRole(r); err != nil {
+			if errors.Is(err, errUnauthorized) {
+				writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
+				return
+			}
+			if errors.Is(err, errForbiddenClub) {
+				writeError(w, http.StatusForbidden, "forbidden", "Нужна роль организатора турниров или владельца клуба")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось проверить права")
 			return
 		}
-		if !auth.IsOrganizerOrAbove(user.Role) {
-			writeError(w, http.StatusForbidden, "forbidden", "Недостаточно прав")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) requireClubOwner(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := s.requireClubOwnerRole(r); s.writeOwnerRoleError(w, err) {
 			return
 		}
 		next.ServeHTTP(w, r)
