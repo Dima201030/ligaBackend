@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"strings"
 	"time"
 
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
@@ -50,6 +51,7 @@ type tournamentJSON struct {
 
 type playerBriefJSON struct {
 	ID        string `json:"id"`
+	Slug      string `json:"slug,omitempty"`
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 	Level     string `json:"level"`
@@ -121,8 +123,8 @@ func registrationFromListRow(row sqlc.ListRegistrationsByTournamentRow) registra
 	return registrationFromJoinedRow(
 		row.ID, row.TournamentID, row.PlayerID, row.PartnerID,
 		row.LookingForPartner, row.Status, row.Seed, row.WaitlistPosition, row.CreatedAt,
-		row.PlayerFirstName, row.PlayerLastName, row.PlayerLevel,
-		row.PartnerFirstName, row.PartnerLastName, row.PartnerLevel,
+		row.PlayerFirstName, row.PlayerLastName, row.PlayerLevel, row.PlayerSlug,
+		row.PartnerFirstName, row.PartnerLastName, row.PartnerLevel, row.PartnerSlug,
 	)
 }
 
@@ -130,8 +132,8 @@ func registrationFromOrganizerListRow(row sqlc.ListOrganizerRegistrationsByTourn
 	return registrationFromJoinedRow(
 		row.ID, row.TournamentID, row.PlayerID, row.PartnerID,
 		row.LookingForPartner, row.Status, row.Seed, row.WaitlistPosition, row.CreatedAt,
-		row.PlayerFirstName, row.PlayerLastName, row.PlayerLevel,
-		row.PartnerFirstName, row.PartnerLastName, row.PartnerLevel,
+		row.PlayerFirstName, row.PlayerLastName, row.PlayerLevel, row.PlayerSlug,
+		row.PartnerFirstName, row.PartnerLastName, row.PartnerLevel, row.PartnerSlug,
 	)
 }
 
@@ -141,8 +143,8 @@ func registrationFromJoinedRow(
 	status sqlc.RegistrationStatus,
 	seed, waitlistPosition pgtype.Int4,
 	createdAt pgtype.Timestamptz,
-	playerFirstName, playerLastName, playerLevel string,
-	partnerFirstName, partnerLastName, partnerLevel pgtype.Text,
+	playerFirstName, playerLastName, playerLevel, playerSlug string,
+	partnerFirstName, partnerLastName, partnerLevel, partnerSlug pgtype.Text,
 ) registrationJSON {
 	out := registrationJSON{
 		ID:                uuidString(id),
@@ -153,6 +155,7 @@ func registrationFromJoinedRow(
 		RegisteredAt:      formatTS(createdAt),
 		Player: playerBriefJSON{
 			ID:        uuidString(playerID),
+			Slug:      playerSlug,
 			FirstName: playerFirstName,
 			LastName:  playerLastName,
 			Level:     playerLevel,
@@ -166,8 +169,13 @@ func registrationFromJoinedRow(
 			if partnerLevel.Valid {
 				level = partnerLevel.String
 			}
+			slug := ""
+			if partnerSlug.Valid {
+				slug = partnerSlug.String
+			}
 			out.Partner = &playerBriefJSON{
 				ID:        pid,
+				Slug:      slug,
 				FirstName: partnerFirstName.String,
 				LastName:  partnerLastName.String,
 				Level:     level,
@@ -215,4 +223,24 @@ func formatTS(ts pgtype.Timestamptz) string {
 		return ""
 	}
 	return ts.Time.UTC().Format(time.RFC3339)
+}
+
+// publicVenue cleans legacy club branding out of publicly visible venue data.
+// Internal organizer views keep the original values.
+func publicVenue(v venueJSON) venueJSON {
+	legacy := func(s string) bool {
+		l := strings.ToLower(strings.TrimSpace(s))
+		return strings.Contains(l, "pushkin") ||
+			strings.Contains(l, "пушкин") ||
+			strings.Contains(l, "волхонск") ||
+			strings.Contains(l, "pairly") ||
+			strings.Contains(l, "парли")
+	}
+	if legacy(v.Name) {
+		v.Name = "Корты"
+	}
+	if legacy(v.Address) {
+		v.Address = ""
+	}
+	return v
 }

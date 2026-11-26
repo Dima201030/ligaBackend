@@ -257,7 +257,7 @@ func organizerPlayerFromRow(row sqlc.ListOrganizerPlayersRow) playerJSON {
 		Losses:             row.Losses,
 		Provisional:        row.MatchesPlayed < 10,
 		Email:              emailString(row.Email),
-		Phone:              textPtr(row.Phone),
+		Phone:              publicPhone(row.Phone),
 		UserStatus:         string(row.UserStatus),
 		Role:               string(row.Role),
 		MemberSince:        formatTS(row.CreatedAt),

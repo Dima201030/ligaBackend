@@ -75,7 +75,7 @@ ORDER BY
     u.created_at DESC;
 
 -- name: ListPlayerBriefsByIDs :many
-SELECT u.id, u.first_name, u.last_name, COALESCE(p.level, '') AS level
+SELECT u.id, u.first_name, u.last_name, COALESCE(p.level, '') AS level, COALESCE(p.slug, '') AS slug
 FROM users u
 LEFT JOIN profiles p ON p.user_id = u.id
 WHERE u.id = ANY($1::uuid[]);

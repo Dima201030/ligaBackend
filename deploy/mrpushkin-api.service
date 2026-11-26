@@ -1,5 +1,5 @@
 [Unit]
-Description=Mr. Pushkin League API stack (db, api, rankingsnapshot)
+Description=Pairly API stack (db, api, rankingsnapshot)
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target

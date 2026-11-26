@@ -64,3 +64,30 @@ func TestValidateScoreRejectsTieSet(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestValidateScoreTiebreakSet(t *testing.T) {
+	winner, text, err := matches.ValidateAndDecideWinner([]matches.SetScore{
+		{Side1: 7, Side2: 6},
+		{Side1: 6, Side2: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if winner != 1 || text != "7:6, 6:4" {
+		t.Fatalf("winner=%d text=%q", winner, text)
+	}
+}
+
+func TestValidateScoreSide2WinsBestOfThree(t *testing.T) {
+	winner, text, err := matches.ValidateAndDecideWinner([]matches.SetScore{
+		{Side1: 4, Side2: 6},
+		{Side1: 7, Side2: 5},
+		{Side1: 3, Side2: 6},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if winner != 2 {
+		t.Fatalf("winner=%d text=%q", winner, text)
+	}
+}

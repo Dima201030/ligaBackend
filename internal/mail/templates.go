@@ -28,17 +28,17 @@ func Render(template string, payload []byte) (Message, error) {
 	case "confirm_email":
 		url := str(data, "confirm_url")
 		token := str(data, "token")
-		body := fmt.Sprintf("Здравствуйте%s!\n\nПодтвердите email для лиги Mr. Pushkin.\n", greet(name))
+		body := fmt.Sprintf("Здравствуйте%s!\n\nПодтвердите email для платформы Pairly.\n", greet(name))
 		if url != "" {
 			body += "\nСсылка: " + url + "\n"
 		} else if token != "" {
 			body += "\nТокен подтверждения: " + token + "\n"
 		}
 		body += "\nЕсли вы не регистрировались — просто игнорируйте письмо.\n"
-		return Message{Subject: "Подтверждение email — Mr. Pushkin", TextBody: body}, nil
+		return Message{Subject: "Подтверждение email — Pairly", TextBody: body}, nil
 	case "registration_received":
 		return Message{
-			Subject: "Заявка получена — Mr. Pushkin",
+			Subject: "Заявка получена — Pairly",
 			TextBody: fmt.Sprintf(
 				"Здравствуйте%s!\n\nМы получили вашу заявку на участие в лиге. Организатор проверит данные и подтвердит аккаунт.\n",
 				greet(name),
@@ -51,7 +51,7 @@ func Render(template string, payload []byte) (Message, error) {
 			extra = " Категория: " + level + "."
 		}
 		return Message{
-			Subject: "Заявка одобрена — Mr. Pushkin",
+			Subject: "Заявка одобрена — Pairly",
 			TextBody: fmt.Sprintf(
 				"Здравствуйте%s!\n\nВаша заявка одобрена.%s Можно входить в кабинет и записываться на турниры.\n",
 				greet(name), extra,
@@ -59,26 +59,26 @@ func Render(template string, payload []byte) (Message, error) {
 		}, nil
 	case "application_rejected":
 		return Message{
-			Subject: "Заявка отклонена — Mr. Pushkin",
+			Subject: "Заявка отклонена — Pairly",
 			TextBody: fmt.Sprintf(
-				"Здравствуйте%s!\n\nК сожалению, заявка отклонена. Свяжитесь с организатором лиги, если нужны подробности.\n",
+				"Здравствуйте%s!\n\nК сожалению, заявка отклонена. Свяжитесь с организатором платформы, если нужны подробности.\n",
 				greet(name),
 			),
 		}, nil
 	case "password_reset":
 		url := str(data, "reset_url")
 		token := str(data, "token")
-		body := fmt.Sprintf("Здравствуйте%s!\n\nЗапрос на сброс пароля в лиге Mr. Pushkin.\n", greet(name))
+		body := fmt.Sprintf("Здравствуйте%s!\n\nЗапрос на сброс пароля на платформе Pairly.\n", greet(name))
 		if url != "" {
 			body += "\nСсылка (действует ограниченное время): " + url + "\n"
 		} else if token != "" {
 			body += "\nТокен сброса: " + token + "\n"
 		}
 		body += "\nЕсли вы не запрашивали сброс — игнорируйте письмо.\n"
-		return Message{Subject: "Сброс пароля — Mr. Pushkin", TextBody: body}, nil
+		return Message{Subject: "Сброс пароля — Pairly", TextBody: body}, nil
 	default:
 		return Message{
-			Subject:  "Уведомление — Mr. Pushkin",
+			Subject:  "Уведомление — Pairly",
 			TextBody: fmt.Sprintf("Шаблон: %s\nДанные: %s\n", template, string(payload)),
 		}, nil
 	}

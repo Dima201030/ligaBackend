@@ -99,9 +99,11 @@ SELECT
     pu.first_name AS player_first_name,
     pu.last_name AS player_last_name,
     pp.level AS player_level,
+    pp.slug AS player_slug,
     partner_u.first_name AS partner_first_name,
     partner_u.last_name AS partner_last_name,
-    partner_p.level AS partner_level
+    partner_p.level AS partner_level,
+    partner_p.slug AS partner_slug
 FROM registrations r
 JOIN users pu ON pu.id = r.player_id
 JOIN profiles pp ON pp.user_id = r.player_id
@@ -135,9 +137,11 @@ SELECT
     pu.first_name AS player_first_name,
     pu.last_name AS player_last_name,
     pp.level AS player_level,
+    pp.slug AS player_slug,
     partner_u.first_name AS partner_first_name,
     partner_u.last_name AS partner_last_name,
-    partner_p.level AS partner_level
+    partner_p.level AS partner_level,
+    partner_p.slug AS partner_slug
 FROM registrations r
 JOIN users pu ON pu.id = r.player_id
 JOIN profiles pp ON pp.user_id = r.player_id

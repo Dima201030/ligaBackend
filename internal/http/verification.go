@@ -154,7 +154,7 @@ func (s *Server) handleConfirmPlayerVerification(w http.ResponseWriter, r *http.
 			"birth_date":          formatDate(prof.BirthDate),
 			"verified_at":         formatTS(prof.VerifiedAt),
 			"level":               prof.Level,
-			"phone":               textPtr(prof.Phone),
+			"phone":               publicPhone(prof.Phone),
 		},
 	})
 }

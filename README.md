@@ -1,6 +1,6 @@
 # ligaBackend
 
-Go API для лиги Mr. Pushkin (D-017). Uploads (covers/avatars) + SMTP-worker + контент,
+Go API платформы Pairly (D-017). Uploads (covers/avatars) + SMTP-worker + контент,
 рейтинг, матчи, турниры, auth.
 
 ## Стек
@@ -45,7 +45,7 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | GET | `/api/clubs/{slug}` | Карточка клуба |
 | GET | `/api/auth/me/clubs` | Клубы текущего пользователя (memberships) |
 | POST | `/api/organizer/clubs` | Онбординг клуба: seed pages + rating_config + owner membership |
-| GET | `/api/tournaments` | Публичный список клуба (без draft; `X-Club-Slug` / `?club=` / `DEFAULT_CLUB_SLUG`) |
+| GET | `/api/tournaments` | Публичный список турниров контура (без draft; `X-Club-Slug` / `?club=` / `DEFAULT_CLUB_SLUG`) |
 | GET | `/api/tournaments/{slug}` | Карточка + заявки |
 | POST | `/api/tournaments/{slug}/registrations` | Заявка (approved) |
 | DELETE | `/api/tournaments/{slug}/registrations/me` | Отмена своей заявки |
@@ -91,6 +91,8 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | POST | `/api/organizer/files` | Upload image (multipart `file`) → metadata + `/api/files/{id}` |
 | GET | `/api/files/{id}` | Отдать файл (`?meta=1` — JSON) |
 | POST | `/api/organizer/tournaments/{id}/cover` | Upload + привязка обложки турнира |
+| POST | `/api/organizer/tournaments/{id}/images` | Upload в галерею турнира (multipart `file`, до 12) |
+| DELETE | `/api/organizer/tournaments/{id}/images/{imageId}` | Удалить изображение галереи |
 | POST | `/api/organizer/news/{id}/cover` | Upload + обложка новости |
 | POST | `/api/organizer/events/{id}/cover` | Upload + обложка события |
 | POST | `/api/organizer/players/{id}/avatar` | Upload + аватар игрока |
@@ -120,6 +122,8 @@ HttpOnly + SameSite=Lax + Secure(prod); в БД только SHA-256(token).
 Локальный диск (`UPLOADS_DIR`, по умолчанию `./data/uploads`). Допустимы JPEG/PNG/GIF/WebP,
 лимит `MAX_UPLOAD_BYTES` (5 MiB). В БД — таблица `files` (checksum SHA-256, mime, size);
 `cover_url` / `avatar_url` получают `/api/files/{id}`. Compose volume: `uploads`.
+Загруженные изображения шифруются на диске AES-256-GCM (ключ выводится из
+`APP_ENCRYPTION_KEY`) и расшифровываются только при отдаче через `/api/files/{id}`.
 
 ```bash
 curl -sS -b cookies.txt -F file=@cover.jpg \

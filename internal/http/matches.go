@@ -790,6 +790,7 @@ func (s *Server) loadPlayerBriefs(r *http.Request, sides []sqlc.MatchSide) (map[
 	for _, row := range rows {
 		out[uuidString(row.ID)] = playerBriefJSON{
 			ID:        uuidString(row.ID),
+			Slug:      row.Slug,
 			FirstName: row.FirstName,
 			LastName:  row.LastName,
 			Level:     row.Level,

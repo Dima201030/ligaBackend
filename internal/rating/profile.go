@@ -14,7 +14,7 @@ func NewProfileParams(userID, clubID pgtype.UUID, phone pgtype.Text, level, firs
 		Level:         level,
 		Slug:          PlayerSlug(lastName, firstName, userID),
 		Gender:        pgtype.Text{},
-		City:          "Пушкин",
+		City:          "",
 		Bio:           "",
 		AvatarUrl:     pgtype.Text{},
 		PlayerStatus:  "active",

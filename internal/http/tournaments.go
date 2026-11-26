@@ -94,6 +94,7 @@ func (s *Server) handleListPublicTournaments(w http.ResponseWriter, r *http.Requ
 		regs, _ := s.latestRegulations(r, row.ID)
 		tj := tournamentFromRow(row, regs)
 		tj.Winners = places[uuidString(row.ID)]
+		tj.Venue = publicVenue(tj.Venue)
 		out = append(out, tj)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tournaments": out})
@@ -127,7 +128,7 @@ func matchPublicFilters(t sqlc.Tournament, status, category, typeFilter string, 
 	if year > 0 && int(t.Season) != year {
 		return false
 	}
-	if query != "" && !strings.Contains(strings.ToLower(t.Title), query) {
+	if query != "" && !strings.Contains(strings.ToLower(t.Title), strings.ToLower(query)) {
 		return false
 	}
 	return true
@@ -167,6 +168,7 @@ func (s *Server) handleGetPublicTournament(w http.ResponseWriter, r *http.Reques
 		list = append(list, registrationFromListRow(row))
 	}
 	tj := tournamentFromRow(tour, regsText)
+	tj.Venue = publicVenue(tj.Venue)
 	tj.Winners, _ = s.listTournamentPlaces(r.Context(), s.currentClubID(r), tour.ID)
 	images, err := s.listTournamentImages(r, tour.ID)
 	if err != nil {
