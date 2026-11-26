@@ -175,6 +175,55 @@ func TestClubMembersInviteListAndPatch(t *testing.T) {
 		t.Fatalf("want left, got %v", deleted.Member["status"])
 	}
 
+	// default list hides soft-removed members
+	listAfterDel := httptest.NewRequest(http.MethodGet, "/api/organizer/members", nil)
+	listAfterDel.Header.Set("X-Club-Slug", clubSlug)
+	listAfterDel = listAfterDel.WithContext(auth.SetUser(listAfterDel.Context(), &auth.SessionUser{
+		ID: owner.ID, Email: ownerEmail, Role: owner.Role, Status: owner.Status,
+	}))
+	listAfterDelRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(listAfterDelRec, listAfterDel)
+	if listAfterDelRec.Code != http.StatusOK {
+		t.Fatalf("list after delete=%d body=%s", listAfterDelRec.Code, listAfterDelRec.Body.String())
+	}
+	var listedAfter struct {
+		Members []map[string]any `json:"members"`
+	}
+	if err := json.Unmarshal(listAfterDelRec.Body.Bytes(), &listedAfter); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range listedAfter.Members {
+		if m["id"] == memberID || m["status"] == "left" {
+			t.Fatalf("soft-deleted member must be hidden from default list: %v", m)
+		}
+	}
+	listLeft := httptest.NewRequest(http.MethodGet, "/api/organizer/members?status=left", nil)
+	listLeft.Header.Set("X-Club-Slug", clubSlug)
+	listLeft = listLeft.WithContext(auth.SetUser(listLeft.Context(), &auth.SessionUser{
+		ID: owner.ID, Email: ownerEmail, Role: owner.Role, Status: owner.Status,
+	}))
+	listLeftRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(listLeftRec, listLeft)
+	if listLeftRec.Code != http.StatusOK {
+		t.Fatalf("list left=%d body=%s", listLeftRec.Code, listLeftRec.Body.String())
+	}
+	var listedLeft struct {
+		Members []map[string]any `json:"members"`
+	}
+	if err := json.Unmarshal(listLeftRec.Body.Bytes(), &listedLeft); err != nil {
+		t.Fatal(err)
+	}
+	foundLeft := false
+	for _, m := range listedLeft.Members {
+		if m["id"] == memberID && m["status"] == "left" {
+			foundLeft = true
+			break
+		}
+	}
+	if !foundLeft {
+		t.Fatal("status=left must still return soft-deleted membership")
+	}
+
 	// organizer cannot DELETE owner
 	ownerRows, err := store.Queries.ListClubMembers(ctx, sqlc.ListClubMembersParams{
 		ClubID: club.ID, Status: pgtype.Text{}, LimitCount: 20, OffsetCount: 0,

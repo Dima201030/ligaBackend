@@ -112,9 +112,17 @@ func (s *Server) handleListClubMembers(w http.ResponseWriter, r *http.Request) {
 			offset = int32(n)
 		}
 	}
+	rawStatus := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("status")))
+	includeLeft := rawStatus == "left" || rawStatus == "all"
 	var statusFilter pgtype.Text
-	if raw := strings.TrimSpace(r.URL.Query().Get("status")); raw != "" {
-		statusFilter = pgtype.Text{String: raw, Valid: true}
+	switch rawStatus {
+	case "", "all":
+		// default / all: query without status predicate; left filtered below unless all
+	case "active", "invited", "blocked", "left":
+		statusFilter = pgtype.Text{String: rawStatus, Valid: true}
+	default:
+		writeError(w, http.StatusBadRequest, "validation", "Статус: active, invited, blocked, left или all")
+		return
 	}
 
 	rows, err := s.store.Queries.ListClubMembers(r.Context(), sqlc.ListClubMembersParams{
@@ -129,6 +137,11 @@ func (s *Server) handleListClubMembers(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]clubMemberJSON, 0, len(rows))
 	for _, row := range rows {
+		// Soft-removed memberships (status=left) stay in DB but are hidden from the
+		// default organizer list so DELETE feels like a real removal.
+		if !includeLeft && row.Status == sqlc.ClubMemberStatusLeft {
+			continue
+		}
 		out = append(out, memberFromListRow(row))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"members": out})
@@ -399,8 +412,9 @@ func (s *Server) ensureNotLastActiveOwner(r *http.Request, clubID pgtype.UUID) e
 	return nil
 }
 
-// handleDeleteClubMember soft-removes a membership (status=left).
-// Organizers cannot remove owners; the last active owner cannot be removed.
+// handleDeleteClubMember soft-removes club membership (status=left).
+// This does not delete the Pairly account or club player profile — only membership.
+// Tournament organizers cannot call this (owner-only); the last active owner cannot be removed.
 func (s *Server) handleDeleteClubMember(w http.ResponseWriter, r *http.Request) {
 	actorRole, err := s.requireClubOwnerRole(r)
 	if s.writeOwnerRoleError(w, err) {
