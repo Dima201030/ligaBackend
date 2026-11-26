@@ -45,11 +45,13 @@ SET phone = COALESCE(sqlc.narg(phone), phone),
     verification_status = sqlc.arg(verification_status),
     verified_at = CASE
         WHEN sqlc.arg(verification_status)::profile_verification_status = 'approved' THEN now()
-        ELSE NULL
+        ELSE NULL::timestamptz
     END,
+    -- Cast THEN/ELSE to uuid: bare NULL makes Postgres type the CASE as text,
+    -- which fails assigning to verified_by (uuid) under pgx prepared statements.
     verified_by = CASE
-        WHEN sqlc.arg(verification_status)::profile_verification_status = 'approved' THEN sqlc.arg(verified_by)
-        ELSE NULL
+        WHEN sqlc.arg(verification_status)::profile_verification_status = 'approved' THEN sqlc.arg(verified_by)::uuid
+        ELSE NULL::uuid
     END,
     verification_note = COALESCE(sqlc.narg(verification_note), verification_note),
     updated_at = now()
