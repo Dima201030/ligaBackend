@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -143,6 +144,7 @@ func (s *Server) handleConfirmPlayerVerification(w http.ResponseWriter, r *http.
 		VerificationNote:   optionalTextPtr(req.Note),
 	})
 	if err != nil {
+		log.Printf("confirm profile verification: user=%s status=%s: %v", uuidString(id), status, err)
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось подтвердить профиль")
 		return
 	}
