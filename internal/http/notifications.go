@@ -50,6 +50,12 @@ func decodeNotificationPrefs(raw []byte) notificationPrefsJSON {
 	return out
 }
 
+// allowsTournamentRegistrationEmails reports whether tournament_registration_*
+// mail may be enqueued for the given profiles.notification_prefs payload.
+func allowsTournamentRegistrationEmails(raw []byte) bool {
+	return decodeNotificationPrefs(raw).Tournaments
+}
+
 func mergeNotificationPrefs(current notificationPrefsJSON, patch map[string]*bool) (notificationPrefsJSON, error) {
 	out := current
 	for key, value := range patch {

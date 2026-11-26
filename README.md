@@ -171,7 +171,9 @@ docker compose --profile smtp up -d mailworker
 ```
 
 Шаблоны: `confirm_email`, `registration_received`, `application_approved`,
-`application_rejected`, `password_reset`. Без SMTP очередь копится, API не падает.
+`application_rejected`, `password_reset`, `tournament_registration_confirmed`,
+`tournament_registration_rejected`, `tournament_registration_waitlist`.
+Без SMTP очередь копится, API не падает.
 Повторные попытки с backoff; после `MAIL` max attempts статус `failed`.
 
 ### Seed организатора
