@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/Dima201030/ligaBackend/internal/auth"
 	"github.com/Dima201030/ligaBackend/internal/clubs"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
+	"github.com/Dima201030/ligaBackend/internal/limits"
 	"github.com/Dima201030/ligaBackend/internal/mail"
 	"github.com/Dima201030/ligaBackend/internal/rating"
 	"github.com/Dima201030/ligaBackend/internal/tournaments"
@@ -595,6 +597,17 @@ func (s *Server) handleCreateTournament(w http.ResponseWriter, r *http.Request) 
 	}
 
 	ctx := r.Context()
+	activeCount, err := s.store.Queries.CountActiveTournamentsByClub(ctx, s.currentClubID(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось создать турнир")
+		return
+	}
+	if activeCount >= limits.MaxActiveTournamentsPerClub {
+		writeError(w, http.StatusConflict, "limit_reached",
+			fmt.Sprintf("Слишком много активных турниров — максимум %d на клуб", limits.MaxActiveTournamentsPerClub))
+		return
+	}
+
 	slug := parsed.slug
 	if slug == "" {
 		slug = tournaments.Slugify(parsed.title)

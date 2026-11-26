@@ -48,11 +48,10 @@ type memFile struct {
 func (memFile) Close() error { return nil }
 
 
-// AllowedMIME is the upload allow-list.
+// AllowedMIME is the upload allow-list (cover and gallery: jpeg/png/webp only).
 var AllowedMIME = map[string]string{
 	"image/jpeg": ".jpg",
 	"image/png":  ".png",
-	"image/gif":  ".gif",
 	"image/webp": ".webp",
 }
 

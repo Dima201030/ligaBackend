@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
+	"github.com/Dima201030/ligaBackend/internal/limits"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,6 +21,15 @@ var (
 	ErrInvalidClubName = errors.New("invalid club name")
 	ErrClubSlugTaken   = errors.New("club slug taken")
 )
+
+// InputError is a Russian validation message for club onboarding fields.
+type InputError struct {
+	Msg string
+	err error
+}
+
+func (e *InputError) Error() string { return e.Msg }
+func (e *InputError) Unwrap() error { return e.err }
 
 // OnboardInput creates a new tenant club with seed content.
 type OnboardInput struct {
@@ -47,11 +57,14 @@ func OnboardClub(ctx context.Context, pool *pgxpool.Pool, q *sqlc.Queries, in On
 	slug := NormalizeSlug(in.Slug)
 	name := strings.TrimSpace(in.Name)
 	city := strings.TrimSpace(in.City)
-	if slug == "" {
-		return OnboardResult{}, ErrInvalidClubSlug
+	if msg := limits.ValidateClubSlug(slug); msg != "" {
+		return OnboardResult{}, &InputError{Msg: msg, err: ErrInvalidClubSlug}
 	}
-	if utf8.RuneCountInString(name) < 2 {
-		return OnboardResult{}, ErrInvalidClubName
+	if msg := limits.ValidateClubName(name); msg != "" {
+		return OnboardResult{}, &InputError{Msg: msg, err: ErrInvalidClubName}
+	}
+	if utf8.RuneCountInString(city) > 80 {
+		return OnboardResult{}, &InputError{Msg: "Город слишком длинный", err: ErrInvalidClubName}
 	}
 	if in.Season == 0 {
 		in.Season = int32(time.Now().Year())

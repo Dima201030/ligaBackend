@@ -141,3 +141,9 @@ LIMIT 1;
 SELECT COALESCE(MAX(version), 0) + 1 AS next_version
 FROM tournament_rule_versions
 WHERE tournament_id = $1;
+
+-- name: CountActiveTournamentsByClub :one
+SELECT COUNT(*)::int AS count
+FROM tournaments
+WHERE club_id = $1
+  AND status NOT IN ('completed', 'cancelled');

@@ -91,3 +91,12 @@ func TestValidateScoreSide2WinsBestOfThree(t *testing.T) {
 		t.Fatalf("winner=%d text=%q", winner, text)
 	}
 }
+
+func TestValidateScoreRejectsOver99(t *testing.T) {
+	_, _, err := matches.ValidateAndDecideWinner([]matches.SetScore{
+		{Side1: 100, Side2: 0},
+	})
+	if err == nil {
+		t.Fatal("expected error for score > 99")
+	}
+}

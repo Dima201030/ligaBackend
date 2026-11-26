@@ -121,3 +121,9 @@ SELECT * FROM pages WHERE club_id = $1 AND slug = $2;
 
 -- name: ListPages :many
 SELECT * FROM pages WHERE club_id = $1 ORDER BY slug ASC;
+
+-- name: CountNewsCreatedSince :one
+SELECT COUNT(*)::int AS count
+FROM news_posts
+WHERE club_id = $1
+  AND created_at >= $2;

@@ -96,7 +96,10 @@ func (s *Server) handleOnboardClub(w http.ResponseWriter, r *http.Request) {
 		OwnerID:  actor.ID,
 	})
 	if err != nil {
+		var inputErr *clubs.InputError
 		switch {
+		case errors.As(err, &inputErr):
+			writeError(w, http.StatusBadRequest, "validation", inputErr.Msg)
 		case errors.Is(err, clubs.ErrInvalidClubSlug):
 			writeError(w, http.StatusBadRequest, "validation", "Укажите slug латиницей: my-club")
 		case errors.Is(err, clubs.ErrInvalidClubName):

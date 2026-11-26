@@ -34,8 +34,11 @@ CREATE TABLE clubs (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT clubs_slug_uidx UNIQUE (slug),
-    CONSTRAINT clubs_slug_chk CHECK (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'),
-    CONSTRAINT clubs_name_chk CHECK (char_length(trim(name)) >= 2)
+    CONSTRAINT clubs_slug_chk CHECK (
+        slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+        AND char_length(slug) BETWEEN 3 AND 40
+    ),
+    CONSTRAINT clubs_name_chk CHECK (char_length(trim(name)) BETWEEN 3 AND 80)
 );
 
 CREATE INDEX clubs_status_idx ON clubs (status);
@@ -568,7 +571,7 @@ CREATE TABLE files (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at      TIMESTAMPTZ,
     CONSTRAINT files_path_uidx UNIQUE (bucket, path),
-    CONSTRAINT files_size_chk CHECK (size > 0 AND size <= 20971520),
+    CONSTRAINT files_size_chk CHECK (size > 0 AND size <= 5242880),
     CONSTRAINT files_mime_chk CHECK (mime IN (
         'image/jpeg', 'image/png', 'image/webp', 'image/gif'
     ))

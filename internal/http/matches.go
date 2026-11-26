@@ -508,8 +508,8 @@ func (s *Server) handleRetireMatch(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			for _, p := range pairs {
-				if len(p) != 2 || p[0] < 0 || p[1] < 0 {
-					writeError(w, http.StatusBadRequest, "validation", "Некорректный счёт сетов")
+				if len(p) != 2 || p[0] < 0 || p[1] < 0 || p[0] > 99 || p[1] > 99 {
+					writeError(w, http.StatusBadRequest, "validation", "Счёт сета должен быть от 0 до 99")
 					return
 				}
 				sets = append(sets, matches.SetScore{Side1: p[0], Side2: p[1]})

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Dima201030/ligaBackend/internal/auth"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
+	"github.com/Dima201030/ligaBackend/internal/limits"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -203,6 +204,20 @@ func (s *Server) handleAddClubMember(w http.ResponseWriter, r *http.Request) {
 	created := errors.Is(getErr, pgx.ErrNoRows)
 	var membershipID pgtype.UUID
 	if created {
+		since := time.Now().UTC().Add(-24 * time.Hour)
+		inviteCount, countErr := s.store.Queries.CountClubMembershipsCreatedSince(r.Context(), sqlc.CountClubMembershipsCreatedSinceParams{
+			ClubID:    clubID,
+			CreatedAt: pgtype.Timestamptz{Time: since, Valid: true},
+		})
+		if countErr != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось добавить участника")
+			return
+		}
+		if inviteCount >= limits.MaxClubInvitesPerDay {
+			writeError(w, http.StatusTooManyRequests, "rate_limited",
+				"Слишком много приглашений за сутки — максимум "+strconv.Itoa(limits.MaxClubInvitesPerDay))
+			return
+		}
 		row, createErr := s.store.Queries.CreateClubMembership(r.Context(), sqlc.CreateClubMembershipParams{
 			ClubID: clubID,
 			UserID: user.ID,
