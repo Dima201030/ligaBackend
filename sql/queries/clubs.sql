@@ -59,3 +59,17 @@ WHERE m.club_id = $1
   AND (sqlc.narg(status)::text IS NULL OR m.status = sqlc.narg(status)::club_member_status)
 ORDER BY m.created_at DESC
 LIMIT sqlc.arg(limit_count) OFFSET sqlc.arg(offset_count);
+
+-- name: UpdateClubMembership :one
+UPDATE club_memberships
+SET role = $3,
+    status = $4,
+    updated_at = now()
+WHERE club_id = $1 AND user_id = $2
+RETURNING *;
+
+-- name: GetClubMembershipByID :one
+SELECT m.*, u.email, u.first_name, u.last_name, u.status AS user_status
+FROM club_memberships m
+JOIN users u ON u.id = m.user_id
+WHERE m.id = $1 AND m.club_id = $2;
