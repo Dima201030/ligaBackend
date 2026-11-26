@@ -130,8 +130,8 @@ func TestClubMembersInviteListAndPatch(t *testing.T) {
 		t.Fatalf("patch=%d body=%s", patchRec.Code, patchRec.Body.String())
 	}
 
-	// organizer-level actor cannot assign owner
-	orgActor := createMemberUser(t, store, "orgact-"+itoaMem(suffix)+"@example.com", sqlc.UserRoleOrganizer)
+	// tournament organizer cannot manage members at all
+	orgActor := createMemberUser(t, store, "orgact-"+itoaMem(suffix)+"@example.com", sqlc.UserRolePlayer)
 	t.Cleanup(func() {
 		_, _ = store.Pool.Exec(context.Background(), `DELETE FROM profiles WHERE user_id=$1`, orgActor.ID)
 		_, _ = store.Pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, orgActor.ID)
@@ -141,7 +141,7 @@ func TestClubMembersInviteListAndPatch(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	forbidBody, _ := json.Marshal(map[string]string{"email": playerEmail, "role": "owner"})
+	forbidBody, _ := json.Marshal(map[string]string{"email": playerEmail, "role": "organizer"})
 	forbidReq := httptest.NewRequest(http.MethodPost, "/api/organizer/members", bytes.NewReader(forbidBody))
 	forbidReq.Header.Set("Content-Type", "application/json")
 	forbidReq.Header.Set("X-Club-Slug", clubSlug)
@@ -151,7 +151,7 @@ func TestClubMembersInviteListAndPatch(t *testing.T) {
 	forbidRec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(forbidRec, forbidReq)
 	if forbidRec.Code != http.StatusForbidden {
-		t.Fatalf("owner assign want 403, got %d %s", forbidRec.Code, forbidRec.Body.String())
+		t.Fatalf("tournament organizer members want 403, got %d %s", forbidRec.Code, forbidRec.Body.String())
 	}
 
 	// DELETE active player → left

@@ -72,7 +72,7 @@ type patchClubRequest struct {
 
 // PATCH /api/organizer/club — update name/city/safe settings for current tenant.
 func (s *Server) handlePatchOrganizerClub(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.actorClubMembershipRole(r); s.writeClubRoleError(w, err) {
+	if _, err := s.requireClubOwnerRole(r); s.writeOwnerRoleError(w, err) {
 		return
 	}
 
