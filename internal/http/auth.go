@@ -209,7 +209,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ip := remoteIPString(r)
-	if !s.limiter.Allow(loginRateLimitKey + ip + ":" + email) {
+	limitKey := loginRateLimitKey + ip + ":" + email
+	// Check without recording: successful logins must not burn the budget
+	// (deploy smoke + retries previously locked the organizer IP for 15m).
+	if !s.limiter.Allowed(limitKey) {
 		writeError(w, http.StatusTooManyRequests, "rate_limited", "Слишком много попыток. Подождите несколько минут.")
 		return
 	}
@@ -218,6 +221,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	user, err := s.store.Queries.GetUserByEmail(ctx, textEmail(email))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			_ = s.limiter.Record(limitKey)
 			writeError(w, http.StatusUnauthorized, "invalid_credentials", "Неверный email или пароль")
 			return
 		}
@@ -227,6 +231,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	ok, err := crypto.VerifyPassword(req.Password, user.PasswordHash)
 	if err != nil || !ok {
+		_ = s.limiter.Record(limitKey)
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "Неверный email или пароль")
 		return
 	}
@@ -271,6 +276,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось выполнить вход")
 		return
 	}
+	s.limiter.Reset(limitKey)
 	s.setSessionCookie(w, token)
 
 	writeJSON(w, http.StatusOK, map[string]any{
