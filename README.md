@@ -56,7 +56,7 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | DELETE | `/api/organizer/members/{id}` | Удалить участника (`status=left`; нельзя последнего owner) |
 | GET | `/api/tournaments` | Публичный список турниров контура (без draft; `X-Club-Slug` / `?club=` / `DEFAULT_CLUB_SLUG`) |
 | GET | `/api/tournaments/{slug}` | Карточка + заявки |
-| POST | `/api/tournaments/{slug}/registrations` | Заявка (approved) |
+| POST | `/api/tournaments/{slug}/registrations` | Заявка (approved + email confirmed + profile verified) |
 | DELETE | `/api/tournaments/{slug}/registrations/me` | Отмена своей заявки |
 | GET | `/api/organizer/tournaments` | Все турниры (organizer+) |
 | POST | `/api/organizer/tournaments` | Создать турнир + rule v1 |

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestConfirmProfileVerificationSQLCastsVerifiedByUUID(t *testing.T) {
@@ -52,6 +53,16 @@ func TestProfileAllowsTournamentRegistration(t *testing.T) {
 		if got := profileAllowsTournamentRegistration(tc.status); got != tc.want {
 			t.Fatalf("status=%q got=%v want=%v", tc.status, got, tc.want)
 		}
+	}
+}
+
+func TestEmailAllowsTournamentRegistration(t *testing.T) {
+	t.Parallel()
+	if emailAllowsTournamentRegistration(pgtype.Timestamptz{}) {
+		t.Fatal("empty email_verified_at must block")
+	}
+	if !emailAllowsTournamentRegistration(pgtype.Timestamptz{Valid: true}) {
+		t.Fatal("valid email_verified_at must allow")
 	}
 }
 

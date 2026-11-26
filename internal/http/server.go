@@ -101,7 +101,7 @@ func NewWithOptions(opts Options) *Server {
 	s.router.Get("/api/tournaments/{slug}/matches", s.handleGetPublicTournamentMatches)
 	s.router.Get("/api/tournaments/{slug}/matches/sync", s.handleSyncPublicTournamentMatches)
 	s.router.Get("/api/tournaments/{slug}/matches/events", s.handleStreamPublicTournamentMatches)
-	s.router.With(s.requireAuth, s.requireApproved, s.requireProfileVerified).Post("/api/tournaments/{slug}/registrations", s.handleCreateRegistration)
+	s.router.With(s.requireAuth, s.requireApproved, s.requireEmailVerified, s.requireProfileVerified).Post("/api/tournaments/{slug}/registrations", s.handleCreateRegistration)
 	s.router.With(s.requireAuth, s.requireApproved).Delete("/api/tournaments/{slug}/registrations/me", s.handleCancelRegistration)
 
 	s.router.Get("/api/players", s.handleListPublicPlayers)

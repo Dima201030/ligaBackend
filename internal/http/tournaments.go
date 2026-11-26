@@ -842,9 +842,13 @@ func (s *Server) handleCreateRegistration(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
 		return
 	}
-	// Defense in depth: middleware already enforces session + user approved + profile verified.
+	// Defense in depth: middleware already enforces session + approved + email + profile verified.
 	if user.Status != sqlc.UserStatusApproved {
 		writeError(w, http.StatusForbidden, "forbidden", "Заявка доступна только подтверждённым игрокам")
+		return
+	}
+	if !emailAllowsTournamentRegistration(user.EmailVerifiedAt) {
+		writeError(w, http.StatusForbidden, "email_unverified", "Подтвердите email по ссылке из письма, затем запишитесь на турнир")
 		return
 	}
 	prof, err := s.store.Queries.GetProfileByUserID(r.Context(), user.ID)

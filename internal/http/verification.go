@@ -29,6 +29,26 @@ func profileAllowsTournamentRegistration(status sqlc.ProfileVerificationStatus) 
 	return status == sqlc.ProfileVerificationStatusApproved
 }
 
+// emailAllowsTournamentRegistration is separate from organizer FIO/profile verification.
+func emailAllowsTournamentRegistration(verifiedAt pgtype.Timestamptz) bool {
+	return verifiedAt.Valid
+}
+
+func (s *Server) requireEmailVerified(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := auth.UserFromContext(r.Context())
+		if user == nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
+			return
+		}
+		if !emailAllowsTournamentRegistration(user.EmailVerifiedAt) {
+			writeError(w, http.StatusForbidden, "email_unverified", "Подтвердите email по ссылке из письма, затем запишитесь на турнир")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) requireProfileVerified(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user := auth.UserFromContext(r.Context())
