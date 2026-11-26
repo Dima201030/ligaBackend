@@ -152,10 +152,24 @@ func (s *Server) sameClub(entityClubID pgtype.UUID, r *http.Request) bool {
 }
 
 func (s *Server) loadClubTournament(r *http.Request, id pgtype.UUID) (sqlc.Tournament, error) {
-	return s.store.Queries.GetTournamentByClubAndID(r.Context(), sqlc.GetTournamentByClubAndIDParams{
-		ClubID: s.currentClubID(r),
-		ID:     id,
-	})
+	tour, err := s.store.Queries.GetTournamentByID(r.Context(), id)
+	if err != nil {
+		return tour, err
+	}
+	// Same header tenant: keep previous single-club behavior.
+	if s.sameClub(tour.ClubID, r) {
+		return tour, nil
+	}
+	// Multi-club: allow when actor may publish under the tournament's club
+	// (platform organizer or club owner) — no global current-club switcher.
+	ok, pubErr := s.canPublishTournamentToClub(r, tour.ClubID)
+	if pubErr != nil {
+		return tour, pubErr
+	}
+	if !ok {
+		return tour, pgx.ErrNoRows
+	}
+	return tour, nil
 }
 
 func (s *Server) loadClubNews(r *http.Request, id pgtype.UUID) (sqlc.NewsPost, error) {
