@@ -46,6 +46,11 @@ func (s *Server) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, max+4096)
 	if err := r.ParseMultipartForm(max + 4096); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "too_large", "Файл слишком большой — максимум 5 МБ")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "validation", "Файл слишком большой или форма некорректна")
 		return
 	}
@@ -343,9 +348,9 @@ var ErrBadUpload = errors.New("bad upload")
 func mapUploadError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, files.ErrTooLarge):
-		writeError(w, http.StatusRequestEntityTooLarge, "too_large", "Файл слишком большой")
+		writeError(w, http.StatusRequestEntityTooLarge, "too_large", "Файл слишком большой — максимум 5 МБ")
 	case errors.Is(err, files.ErrUnsupported):
-		writeError(w, http.StatusUnsupportedMediaType, "unsupported", "Допустимы JPEG, PNG, GIF, WebP")
+		writeError(w, http.StatusUnsupportedMediaType, "unsupported", "Допустимы JPEG, PNG, WebP")
 	case errors.Is(err, files.ErrEmpty), errors.Is(err, ErrBadUpload):
 		writeError(w, http.StatusBadRequest, "validation", "Некорректный файл")
 	default:

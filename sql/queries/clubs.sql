@@ -80,3 +80,9 @@ FROM club_memberships
 WHERE club_id = $1
   AND role = 'owner'
   AND status = 'active';
+
+-- name: CountClubMembershipsCreatedSince :one
+SELECT COUNT(*)::int AS count
+FROM club_memberships
+WHERE club_id = $1
+  AND created_at >= $2;

@@ -36,6 +36,9 @@ func ValidateAndDecideWinner(sets []SetScore) (winner int, text string, err erro
 		if set.Side1 < 0 || set.Side2 < 0 {
 			return 0, "", fmt.Errorf("%w: отрицательный счёт в сете %d", ErrInvalidScore, i+1)
 		}
+		if set.Side1 > 99 || set.Side2 > 99 {
+			return 0, "", fmt.Errorf("%w: счёт в сете %d должен быть от 0 до 99", ErrInvalidScore, i+1)
+		}
 		if set.Side1 == set.Side2 {
 			return 0, "", fmt.Errorf("%w: ничья в сете %d недопустима", ErrInvalidScore, i+1)
 		}
@@ -125,6 +128,9 @@ func ParseSetsJSON(raw json.RawMessage) ([]SetScore, error) {
 			if len(p) != 2 {
 				return nil, fmt.Errorf("%w: сет %d должен содержать два числа", ErrInvalidScore, i+1)
 			}
+			if p[0] < 0 || p[1] < 0 || p[0] > 99 || p[1] > 99 {
+				return nil, fmt.Errorf("%w: счёт в сете %d должен быть от 0 до 99", ErrInvalidScore, i+1)
+			}
 			out = append(out, SetScore{Side1: p[0], Side2: p[1]})
 		}
 		return out, nil
@@ -132,6 +138,11 @@ func ParseSetsJSON(raw json.RawMessage) ([]SetScore, error) {
 	var objs []SetScore
 	if err := json.Unmarshal(raw, &objs); err != nil {
 		return nil, fmt.Errorf("%w: ожидается массив сетов", ErrInvalidScore)
+	}
+	for i, set := range objs {
+		if set.Side1 < 0 || set.Side2 < 0 || set.Side1 > 99 || set.Side2 > 99 {
+			return nil, fmt.Errorf("%w: счёт в сете %d должен быть от 0 до 99", ErrInvalidScore, i+1)
+		}
 	}
 	return objs, nil
 }

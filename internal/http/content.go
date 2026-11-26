@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/Dima201030/ligaBackend/internal/auth"
 	"github.com/Dima201030/ligaBackend/internal/content"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
+	"github.com/Dima201030/ligaBackend/internal/limits"
 	"github.com/Dima201030/ligaBackend/internal/tournaments"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -168,6 +170,20 @@ func (s *Server) handleCreateNews(w http.ResponseWriter, r *http.Request) {
 	var req newsWriteRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Некорректное тело запроса")
+		return
+	}
+	since := time.Now().UTC().Add(-24 * time.Hour)
+	newsCount, err := s.store.Queries.CountNewsCreatedSince(r.Context(), sqlc.CountNewsCreatedSinceParams{
+		ClubID:    s.currentClubID(r),
+		CreatedAt: pgtype.Timestamptz{Time: since, Valid: true},
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось создать новость")
+		return
+	}
+	if newsCount >= limits.MaxNewsPerDayPerClub {
+		writeError(w, http.StatusTooManyRequests, "rate_limited",
+			fmt.Sprintf("Слишком много новостей за сутки — максимум %d на клуб", limits.MaxNewsPerDayPerClub))
 		return
 	}
 	params, err := s.buildNewsCreate(r, actor, req)

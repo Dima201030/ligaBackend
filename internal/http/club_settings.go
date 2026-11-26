@@ -9,6 +9,7 @@ import (
 
 	"github.com/Dima201030/ligaBackend/internal/clubs"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
+	"github.com/Dima201030/ligaBackend/internal/limits"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -99,12 +100,8 @@ func (s *Server) handlePatchOrganizerClub(w http.ResponseWriter, r *http.Request
 	name := existing.Name
 	if req.Name != nil {
 		name = strings.TrimSpace(*req.Name)
-		if utf8.RuneCountInString(name) < 2 {
-			writeError(w, http.StatusBadRequest, "validation", "Название клуба слишком короткое")
-			return
-		}
-		if utf8.RuneCountInString(name) > 120 {
-			writeError(w, http.StatusBadRequest, "validation", "Название клуба слишком длинное")
+		if msg := limits.ValidateClubName(name); msg != "" {
+			writeError(w, http.StatusBadRequest, "validation", msg)
 			return
 		}
 	}

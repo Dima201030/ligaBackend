@@ -9,6 +9,7 @@ import (
 
 	"github.com/Dima201030/ligaBackend/internal/auth"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
+	"github.com/Dima201030/ligaBackend/internal/limits"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -120,11 +121,15 @@ func (s *Server) handleConfirmPlayerVerification(w http.ResponseWriter, r *http.
 			writeError(w, http.StatusBadRequest, "validation", "Дата рождения: YYYY-MM-DD")
 			return
 		}
+		if msg := limits.ValidateAge(t, time.Now().UTC()); msg != "" {
+			writeError(w, http.StatusBadRequest, "validation", msg)
+			return
+		}
 		birth = pgtype.Date{Time: t, Valid: true}
 	}
 
 	if req.Level != nil && strings.TrimSpace(*req.Level) != "" && !auth.ValidLevel(strings.TrimSpace(*req.Level)) {
-		writeError(w, http.StatusBadRequest, "validation", "Некорректная категория")
+		writeError(w, http.StatusBadRequest, "validation", "Укажите уровень из списка взрослых категорий")
 		return
 	}
 
