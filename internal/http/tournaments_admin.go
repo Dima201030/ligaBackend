@@ -37,6 +37,27 @@ func (s *Server) hiddenTournamentIDs(ctx context.Context) (map[string]bool, erro
 	return out, rows.Err()
 }
 
+// hiddenTournamentIDsAll is the platform-wide hidden set (cross-club catalog).
+func (s *Server) hiddenTournamentIDsAll(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.store.Pool.Query(ctx, `SELECT id FROM tournaments WHERE is_hidden`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]bool{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		if id.Valid {
+			out[uuidString(id)] = true
+		}
+	}
+	return out, rows.Err()
+}
+
 // currentClubIDFromContext mirrors currentClubID for callers without a request.
 func (s *Server) currentClubIDFromContext(ctx context.Context) pgtype.UUID {
 	if c := clubs.FromContext(ctx); c != nil {

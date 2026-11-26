@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Dima201030/ligaBackend/internal/auth"
+	"github.com/Dima201030/ligaBackend/internal/clubs"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
 	"github.com/Dima201030/ligaBackend/internal/mail"
 	"github.com/Dima201030/ligaBackend/internal/rating"
@@ -69,12 +70,6 @@ type updateRegistrationStatusRequest struct {
 }
 
 func (s *Server) handleListPublicTournaments(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.store.Queries.ListPublicTournaments(r.Context(), s.currentClubID(r))
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турниры")
-		return
-	}
-
 	statusFilter := strings.TrimSpace(r.URL.Query().Get("status"))
 	category := strings.TrimSpace(r.URL.Query().Get("category"))
 	typeFilter := strings.TrimSpace(r.URL.Query().Get("type"))
@@ -83,9 +78,21 @@ func (s *Server) handleListPublicTournaments(w http.ResponseWriter, r *http.Requ
 	if y := strings.TrimSpace(r.URL.Query().Get("year")); y != "" {
 		year, _ = strconv.Atoi(y)
 	}
+	scope := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("scope")))
+	if scope == "platform" || r.URL.Query().Get("aggregate") == "1" {
+		s.writePlatformPublicTournaments(w, r, statusFilter, category, typeFilter, year, query)
+		return
+	}
+
+	rows, err := s.store.Queries.ListPublicTournaments(r.Context(), s.currentClubID(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турниры")
+		return
+	}
 
 	hidden, _ := s.hiddenTournamentIDs(r.Context())
 	places, _ := s.allTournamentPlaces(r.Context(), s.currentClubID(r))
+	clubSlug, clubName := s.currentClubMeta(r)
 	out := make([]tournamentJSON, 0, len(rows))
 	for _, row := range rows {
 		if hidden[uuidString(row.ID)] {
@@ -95,12 +102,84 @@ func (s *Server) handleListPublicTournaments(w http.ResponseWriter, r *http.Requ
 			continue
 		}
 		regs, _ := s.latestRegulations(r, row.ID)
-		tj := tournamentFromRow(row, regs)
+		tj := withClubMeta(tournamentFromRow(row, regs), clubSlug, clubName)
 		tj.Winners = places[uuidString(row.ID)]
 		tj.Venue = publicVenue(tj.Venue)
 		out = append(out, tj)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tournaments": out})
+}
+
+func (s *Server) writePlatformPublicTournaments(
+	w http.ResponseWriter,
+	r *http.Request,
+	statusFilter, category, typeFilter string,
+	year int,
+	query string,
+) {
+	rows, err := s.store.Queries.ListPlatformPublicTournaments(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турниры")
+		return
+	}
+	hidden, _ := s.hiddenTournamentIDsAll(r.Context())
+	out := make([]tournamentJSON, 0, len(rows))
+	for _, row := range rows {
+		if hidden[uuidString(row.ID)] {
+			continue
+		}
+		tour := platformRowToTournament(row)
+		if !matchPublicFilters(tour, statusFilter, category, typeFilter, year, query) {
+			continue
+		}
+		regs, _ := s.latestRegulations(r, row.ID)
+		tj := withClubMeta(tournamentFromRow(tour, regs), row.ClubSlug, row.ClubName)
+		tj.Venue = publicVenue(tj.Venue)
+		out = append(out, tj)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tournaments": out, "scope": "platform"})
+}
+
+func platformRowToTournament(row sqlc.ListPlatformPublicTournamentsRow) sqlc.Tournament {
+	return sqlc.Tournament{
+		ID:                   row.ID,
+		ClubID:               row.ClubID,
+		Slug:                 row.Slug,
+		Title:                row.Title,
+		Description:          row.Description,
+		Type:                 row.Type,
+		Category:             row.Category,
+		Surface:              row.Surface,
+		Format:               row.Format,
+		Status:               row.Status,
+		StartsAt:             row.StartsAt,
+		EndsAt:               row.EndsAt,
+		RegistrationOpensAt:  row.RegistrationOpensAt,
+		RegistrationClosesAt: row.RegistrationClosesAt,
+		VenueName:            row.VenueName,
+		VenueAddress:         row.VenueAddress,
+		VenueCourts:          row.VenueCourts,
+		VenueSurface:         row.VenueSurface,
+		EntryFee:             row.EntryFee,
+		MaxParticipants:      row.MaxParticipants,
+		CoverUrl:             row.CoverUrl,
+		CoverFileID:          row.CoverFileID,
+		Season:               row.Season,
+		CreatedBy:            row.CreatedBy,
+		BracketStatus:        row.BracketStatus,
+		BracketPublishedAt:   row.BracketPublishedAt,
+		BracketVersion:       row.BracketVersion,
+		BracketThirdPlace:    row.BracketThirdPlace,
+		CreatedAt:            row.CreatedAt,
+		UpdatedAt:            row.UpdatedAt,
+	}
+}
+
+func (s *Server) currentClubMeta(r *http.Request) (slug, name string) {
+	if c := clubs.FromContext(r.Context()); c != nil {
+		return c.Slug, c.Name
+	}
+	return clubs.DefaultSlug, ""
 }
 
 func matchPublicFilters(t sqlc.Tournament, status, category, typeFilter string, year int, query string) bool {
@@ -170,7 +249,8 @@ func (s *Server) handleGetPublicTournament(w http.ResponseWriter, r *http.Reques
 	for _, row := range regs {
 		list = append(list, registrationFromListRow(row))
 	}
-	tj := tournamentFromRow(tour, regsText)
+	clubSlug, clubName := s.currentClubMeta(r)
+	tj := withClubMeta(tournamentFromRow(tour, regsText), clubSlug, clubName)
 	tj.Venue = publicVenue(tj.Venue)
 	tj.Winners, _ = s.listTournamentPlaces(r.Context(), s.currentClubID(r), tour.ID)
 	images, err := s.listTournamentImages(r, tour.ID)
@@ -797,6 +877,13 @@ func (s *Server) handleCreateRegistration(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusBadRequest, "validation", "Некорректный идентификатор партнёра")
 			return
 		}
+	}
+
+	// Silent auto-join: organizer tooling expects club membership; player UX has no club switcher.
+	if err := s.ensureActivePlayerMembership(r.Context(), tour.ClubID, user.ID); err != nil {
+		log.Printf("ensure club membership before registration: user=%s club=%s: %v", uuidString(user.ID), uuidString(tour.ClubID), err)
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось подать заявку")
+		return
 	}
 
 	reg, err := tournaments.CreateRegistration(r.Context(), s.store, tournaments.CreateRegistrationInput{

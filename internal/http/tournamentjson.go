@@ -19,6 +19,8 @@ type venueJSON struct {
 type tournamentJSON struct {
 	ID                   string                `json:"id"`
 	ClubID               string                `json:"club_id,omitempty"`
+	ClubSlug             string                `json:"club_slug,omitempty"`
+	ClubName             string                `json:"club_name,omitempty"`
 	Slug                 string                `json:"slug"`
 	Title                string                `json:"title"`
 	Description          string                `json:"description"`
@@ -69,6 +71,12 @@ type registrationJSON struct {
 	RegisteredAt      string           `json:"registered_at"`
 	Player            playerBriefJSON  `json:"player"`
 	Partner           *playerBriefJSON `json:"partner,omitempty"`
+}
+
+func withClubMeta(tj tournamentJSON, slug, name string) tournamentJSON {
+	tj.ClubSlug = slug
+	tj.ClubName = name
+	return tj
 }
 
 func tournamentFromRow(t sqlc.Tournament, regulations string) tournamentJSON {
