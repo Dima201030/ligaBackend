@@ -136,6 +136,14 @@ SET phone = NULL,
 WHERE user_id = $1
 RETURNING *;
 
+-- name: SetProfilePlayerStatus :one
+-- Club-scoped visibility for public players / live ranking (active|blocked|archived).
+UPDATE profiles
+SET player_status = $2,
+    updated_at = now()
+WHERE user_id = $1
+RETURNING *;
+
 -- name: ListPublicPlayers :many
 SELECT
     u.id,

@@ -174,6 +174,13 @@ func TestClubMembersInviteListAndPatch(t *testing.T) {
 	if deleted.Member["status"] != "left" {
 		t.Fatalf("want left, got %v", deleted.Member["status"])
 	}
+	prof, err := store.Queries.GetProfileByUserID(ctx, player.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prof.PlayerStatus != "archived" {
+		t.Fatalf("delete must archive club profile for ranking hide, got %q", prof.PlayerStatus)
+	}
 
 	// default list hides soft-removed members
 	listAfterDel := httptest.NewRequest(http.MethodGet, "/api/organizer/members", nil)
