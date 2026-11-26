@@ -38,14 +38,14 @@ func (s *Server) requireProfileVerified(next http.Handler) http.Handler {
 		prof, err := s.store.Queries.GetProfileByUserID(r.Context(), user.ID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				writeError(w, http.StatusForbidden, "profile_unverified", "Профиль не верифицирован организатором")
+				writeError(w, http.StatusForbidden, "profile_unverified", "Организатор ещё не подтвердил ваш профиль")
 				return
 			}
-			writeError(w, http.StatusInternalServerError, "internal", "Не удалось проверить верификацию")
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось проверить статус профиля")
 			return
 		}
 		if !profileAllowsTournamentRegistration(prof.VerificationStatus) {
-			writeError(w, http.StatusForbidden, "profile_unverified", "Регистрация доступна только после подтверждения профиля организатором")
+			writeError(w, http.StatusForbidden, "profile_unverified", "Запись на турнир откроется после подтверждения профиля организатором")
 			return
 		}
 		next.ServeHTTP(w, r)

@@ -20,7 +20,7 @@ SET rating = $1,
     losses = losses + $5,
     updated_at = now()
 WHERE user_id = $6
-RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, birth_date, verification_status, verified_at, verified_by, verification_note, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, birth_date, verification_status, verified_at, verified_by, verification_note, rating, points, singles_points, doubles_points, matches_played, wins, losses, notification_prefs, created_at, updated_at
 `
 
 type ApplyProfileRatingDeltaParams struct {
@@ -66,6 +66,7 @@ func (q *Queries) ApplyProfileRatingDelta(ctx context.Context, arg ApplyProfileR
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
+		&i.NotificationPrefs,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -765,7 +766,7 @@ const setProfilePoints = `-- name: SetProfilePoints :one
 UPDATE profiles
 SET points = $2, updated_at = now()
 WHERE user_id = $1
-RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, birth_date, verification_status, verified_at, verified_by, verification_note, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, birth_date, verification_status, verified_at, verified_by, verification_note, rating, points, singles_points, doubles_points, matches_played, wins, losses, notification_prefs, created_at, updated_at
 `
 
 type SetProfilePointsParams struct {
@@ -800,6 +801,7 @@ func (q *Queries) SetProfilePoints(ctx context.Context, arg SetProfilePointsPara
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
+		&i.NotificationPrefs,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -813,7 +815,7 @@ SET singles_points = $1,
     points = $1::int + $2::int,
     updated_at = now()
 WHERE user_id = $3
-RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, birth_date, verification_status, verified_at, verified_by, verification_note, rating, points, singles_points, doubles_points, matches_played, wins, losses, created_at, updated_at
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, birth_date, verification_status, verified_at, verified_by, verification_note, rating, points, singles_points, doubles_points, matches_played, wins, losses, notification_prefs, created_at, updated_at
 `
 
 type SetProfilePointsBreakdownParams struct {
@@ -849,6 +851,7 @@ func (q *Queries) SetProfilePointsBreakdown(ctx context.Context, arg SetProfileP
 		&i.MatchesPlayed,
 		&i.Wins,
 		&i.Losses,
+		&i.NotificationPrefs,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

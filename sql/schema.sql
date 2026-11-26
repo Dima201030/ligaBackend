@@ -98,6 +98,12 @@ CREATE TABLE profiles (
     matches_played  INT NOT NULL DEFAULT 0,
     wins            INT NOT NULL DEFAULT 0,
     losses          INT NOT NULL DEFAULT 0,
+    notification_prefs JSONB NOT NULL DEFAULT '{
+        "tournaments": true,
+        "reminders": true,
+        "results": true,
+        "news": false
+    }'::jsonb,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT profiles_level_chk CHECK (

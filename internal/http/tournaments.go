@@ -713,7 +713,7 @@ func (s *Server) handleCreateRegistration(w http.ResponseWriter, r *http.Request
 	}
 	prof, err := s.store.Queries.GetProfileByUserID(r.Context(), user.ID)
 	if err != nil || !profileAllowsTournamentRegistration(prof.VerificationStatus) {
-		writeError(w, http.StatusForbidden, "profile_unverified", "Регистрация доступна только после подтверждения профиля организатором")
+		writeError(w, http.StatusForbidden, "profile_unverified", "Запись на турнир откроется после подтверждения профиля организатором")
 		return
 	}
 

@@ -745,22 +745,32 @@ func (q *Queries) PublishTournamentBracket(ctx context.Context, id pgtype.UUID) 
 	return i, err
 }
 
-const setMatchStatus = `-- name: SetMatchStatus :one
+const setMatchBracketState = `-- name: SetMatchBracketState :one
 UPDATE matches
 SET status = $2,
+    is_bye = $3,
+    winner_side = $4,
+    version = version + 1,
     updated_at = now()
 WHERE id = $1
-  AND status IN ('scheduled', 'live')
+  AND status IN ('scheduled', 'bye', 'live')
 RETURNING id, tournament_id, bracket_key, stage, round_index, position, round_label, scheduled_at, court, status, score_sets, score_text, winner_side, next_match_id, next_slot, loser_next_match_id, loser_next_slot, is_bye, version, created_at, updated_at
 `
 
-type SetMatchStatusParams struct {
-	ID     pgtype.UUID
-	Status MatchStatus
+type SetMatchBracketStateParams struct {
+	ID         pgtype.UUID
+	Status     MatchStatus
+	IsBye      bool
+	WinnerSide pgtype.Int2
 }
 
-func (q *Queries) SetMatchStatus(ctx context.Context, arg SetMatchStatusParams) (Match, error) {
-	row := q.db.QueryRow(ctx, setMatchStatus, arg.ID, arg.Status)
+func (q *Queries) SetMatchBracketState(ctx context.Context, arg SetMatchBracketStateParams) (Match, error) {
+	row := q.db.QueryRow(ctx, setMatchBracketState,
+		arg.ID,
+		arg.Status,
+		arg.IsBye,
+		arg.WinnerSide,
+	)
 	var i Match
 	err := row.Scan(
 		&i.ID,
@@ -788,27 +798,22 @@ func (q *Queries) SetMatchStatus(ctx context.Context, arg SetMatchStatusParams) 
 	return i, err
 }
 
-const setMatchBracketState = `-- name: SetMatchBracketState :one
+const setMatchStatus = `-- name: SetMatchStatus :one
 UPDATE matches
 SET status = $2,
-    is_bye = $3,
-    winner_side = $4,
-    version = version + 1,
     updated_at = now()
 WHERE id = $1
-  AND status IN ('scheduled', 'bye', 'live')
+  AND status IN ('scheduled', 'live')
 RETURNING id, tournament_id, bracket_key, stage, round_index, position, round_label, scheduled_at, court, status, score_sets, score_text, winner_side, next_match_id, next_slot, loser_next_match_id, loser_next_slot, is_bye, version, created_at, updated_at
 `
 
-type SetMatchBracketStateParams struct {
-	ID         pgtype.UUID
-	Status     MatchStatus
-	IsBye      bool
-	WinnerSide pgtype.Int2
+type SetMatchStatusParams struct {
+	ID     pgtype.UUID
+	Status MatchStatus
 }
 
-func (q *Queries) SetMatchBracketState(ctx context.Context, arg SetMatchBracketStateParams) (Match, error) {
-	row := q.db.QueryRow(ctx, setMatchBracketState, arg.ID, arg.Status, arg.IsBye, arg.WinnerSide)
+func (q *Queries) SetMatchStatus(ctx context.Context, arg SetMatchStatusParams) (Match, error) {
+	row := q.db.QueryRow(ctx, setMatchStatus, arg.ID, arg.Status)
 	var i Match
 	err := row.Scan(
 		&i.ID,
@@ -913,6 +918,8 @@ type SubmitMatchResultParams struct {
 	Version    int32
 }
 
+// First finish: scheduled/live. Correction: completed/walkover/disqualified with matching version
+// (service layer refuses if the next-round match already has a result).
 func (q *Queries) SubmitMatchResult(ctx context.Context, arg SubmitMatchResultParams) (Match, error) {
 	row := q.db.QueryRow(ctx, submitMatchResult,
 		arg.ID,
