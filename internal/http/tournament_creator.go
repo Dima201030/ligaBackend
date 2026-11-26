@@ -74,16 +74,12 @@ func (s *Server) attachTournamentCreators(ctx context.Context, items []tournamen
 	}
 	byID := make(map[string]creatorJSON, len(rows))
 	for _, row := range rows {
-		c := creatorJSON{
+		// Public payloads must not expose creator email (PII).
+		byID[uuidString(row.ID)] = creatorJSON{
 			ID:        uuidString(row.ID),
 			FirstName: row.FirstName,
 			LastName:  row.LastName,
 		}
-		if row.Email.Valid && row.Email.String != "" {
-			email := row.Email.String
-			c.Email = &email
-		}
-		byID[c.ID] = c
 	}
 	for i := range items {
 		if c, ok := byID[items[i].CreatedByID]; ok {

@@ -86,7 +86,20 @@ func main() {
 		if err != nil {
 			log.Fatalf("reset club ownership: %v", err)
 		}
-		fmt.Printf("updated organizer: id=%s email=%s role=organizer status=approved club_role=owner\n",
+		// Seeded owner is trusted — skip player verification gate for registration smoke.
+		_, err = store.Pool.Exec(ctx, `
+			UPDATE profiles
+			SET verification_status = 'approved',
+			    verified_at = COALESCE(verified_at, now()),
+			    verified_by = COALESCE(verified_by, $1),
+			    verification_note = COALESCE(NULLIF(verification_note, ''), 'seed organizer'),
+			    updated_at = now()
+			WHERE user_id = $1
+		`, existing.ID)
+		if err != nil {
+			log.Fatalf("approve organizer profile: %v", err)
+		}
+		fmt.Printf("updated organizer: id=%s email=%s role=organizer status=approved club_role=owner verification=approved\n",
 			uuidString(existing.ID), existing.Email.String)
 		return
 	}
@@ -113,9 +126,30 @@ func main() {
 		log.Fatalf("create user: %v", err)
 	}
 	clubID := clubs.DefaultUUID()
-	if _, err := q.CreateProfile(ctx, rating.NewProfileParams(
+	params := rating.NewProfileParams(
 		user.ID, clubID, pgtype.Text{}, level, firstName, lastName,
-	)); err != nil {
+	)
+	if _, err := q.CreateApprovedProfile(ctx, sqlc.CreateApprovedProfileParams{
+		UserID:           params.UserID,
+		ClubID:           params.ClubID,
+		Phone:            params.Phone,
+		Level:            params.Level,
+		Slug:             params.Slug,
+		Gender:           params.Gender,
+		City:             params.City,
+		Bio:              params.Bio,
+		AvatarUrl:        params.AvatarUrl,
+		PlayerStatus:     params.PlayerStatus,
+		VerifiedBy:       user.ID,
+		VerificationNote: pgtype.Text{String: "seed organizer", Valid: true},
+		Rating:           params.Rating,
+		Points:           params.Points,
+		SinglesPoints:    params.SinglesPoints,
+		DoublesPoints:    params.DoublesPoints,
+		MatchesPlayed:    params.MatchesPlayed,
+		Wins:             params.Wins,
+		Losses:           params.Losses,
+	}); err != nil {
 		log.Fatalf("create profile: %v", err)
 	}
 	// Seeded club admin gets club owner so members/settings stay available after MP-104.
@@ -131,7 +165,7 @@ func main() {
 		log.Fatalf("commit: %v", err)
 	}
 
-	fmt.Printf("seeded organizer: id=%s email=%s role=%s status=%s club_role=owner\n",
+	fmt.Printf("seeded organizer: id=%s email=%s role=%s status=%s club_role=owner verification=approved\n",
 		uuidString(user.ID), user.Email.String, user.Role, user.Status)
 }
 
