@@ -181,6 +181,30 @@ func TestClubMembersInviteListAndPatch(t *testing.T) {
 	if prof.PlayerStatus != "archived" {
 		t.Fatalf("delete must archive club profile for ranking hide, got %q", prof.PlayerStatus)
 	}
+	erased, err := store.Queries.GetUserByID(ctx, player.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if erased.Email.Valid {
+		t.Fatalf("delete must clear email, got %v", erased.Email)
+	}
+	if erased.FirstName != "Удалённый" || erased.LastName != "аккаунт" {
+		t.Fatalf("delete must anonymize name, got %q %q", erased.FirstName, erased.LastName)
+	}
+	if erased.Status != sqlc.UserStatusRejected {
+		t.Fatalf("delete must reject account, got %s", erased.Status)
+	}
+	orgPlayers, err := store.Queries.ListOrganizerPlayers(ctx, sqlc.ListOrganizerPlayersParams{
+		ClubID: club.ID, LimitCount: 50, OffsetCount: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range orgPlayers {
+		if uuidString(p.ID) == uuidString(player.ID) {
+			t.Fatal("erased player must be hidden from organizer players list")
+		}
+	}
 
 	// default list hides soft-removed members
 	listAfterDel := httptest.NewRequest(http.MethodGet, "/api/organizer/members", nil)

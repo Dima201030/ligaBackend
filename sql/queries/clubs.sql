@@ -68,6 +68,14 @@ SET role = $3,
 WHERE club_id = $1 AND user_id = $2
 RETURNING *;
 
+-- name: LeaveAllActiveClubMemberships :exec
+-- Account erasure: soft-leave every active club membership for the user.
+UPDATE club_memberships
+SET status = 'left',
+    updated_at = now()
+WHERE user_id = $1
+  AND status = 'active';
+
 -- name: GetClubMembershipByID :one
 SELECT m.*, u.email, u.first_name, u.last_name, u.status AS user_status
 FROM club_memberships m

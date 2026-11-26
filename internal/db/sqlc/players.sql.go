@@ -516,6 +516,7 @@ SELECT
 FROM profiles p
 JOIN users u ON u.id = p.user_id
 WHERE p.club_id = $1
+  AND p.player_status IN ('active', 'blocked')
   AND ($2::text IS NULL OR u.status = $2::user_status)
   AND ($3::text IS NULL OR p.level = $3)
 ORDER BY u.created_at DESC

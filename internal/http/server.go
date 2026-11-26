@@ -153,6 +153,7 @@ func NewWithOptions(opts Options) *Server {
 		r.Post("/players", s.handleCreatePlaceholderPlayer)
 		r.Get("/players/placeholders", s.handleListPlaceholderPlayers)
 		r.Patch("/players/{id}", s.handleUpdateOrganizerPlayer)
+		r.Delete("/players/{id}", s.handleDeleteOrganizerPlayer)
 		r.Post("/players/{id}/verify", s.handleConfirmPlayerVerification)
 		r.Post("/players/{id}/merge", s.handleMergePlaceholderPlayer)
 		r.Post("/files", s.handleUploadFile)

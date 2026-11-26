@@ -422,7 +422,6 @@ func (s *Server) ensureNotLastActiveOwner(r *http.Request, clubID pgtype.UUID) e
 }
 
 // archiveClubPlayerProfile hides the user from public players / live ranking for the club.
-// Pairly account stays; profile row is archived (not deleted) so history/FKs remain.
 func (s *Server) archiveClubPlayerProfile(r *http.Request, userID pgtype.UUID) {
 	if s.store == nil {
 		return
@@ -443,9 +442,9 @@ func (s *Server) activateClubPlayerProfile(r *http.Request, userID pgtype.UUID) 
 	})
 }
 
-// handleDeleteClubMember soft-removes club membership (status=left) and archives the
-// club player profile so the person disappears from rating / public players.
-// Does not delete the Pairly account. Owner-only; last active owner cannot be removed.
+// handleDeleteClubMember soft-leaves club membership and, for player accounts, erases
+// the Pairly account (anonymize → «Удалённый аккаунт», hide from ranking/players,
+// cancel registrations). Owner-only; last active owner cannot be removed.
 func (s *Server) handleDeleteClubMember(w http.ResponseWriter, r *http.Request) {
 	actorRole, err := s.requireClubOwnerRole(r)
 	if s.writeOwnerRoleError(w, err) {
@@ -457,7 +456,8 @@ func (s *Server) handleDeleteClubMember(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	clubID := s.currentClubID(r)
-	row, err := s.store.Queries.GetClubMembershipByID(r.Context(), sqlc.GetClubMembershipByIDParams{
+	ctx := r.Context()
+	row, err := s.store.Queries.GetClubMembershipByID(ctx, sqlc.GetClubMembershipByIDParams{
 		ID:     id,
 		ClubID: clubID,
 	})
@@ -493,7 +493,22 @@ func (s *Server) handleDeleteClubMember(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	if _, err := s.store.Queries.UpdateClubMembership(r.Context(), sqlc.UpdateClubMembershipParams{
+	target, err := s.store.Queries.GetUserByID(ctx, row.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить участника")
+		return
+	}
+	eraseAccount := !auth.IsOrganizerOrAbove(target.Role)
+
+	tx, err := s.store.Pool.Begin(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось удалить участника")
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := s.store.Queries.WithTx(tx)
+
+	if _, err := q.UpdateClubMembership(ctx, sqlc.UpdateClubMembershipParams{
 		ClubID: clubID,
 		UserID: row.UserID,
 		Role:   row.Role,
@@ -502,8 +517,26 @@ func (s *Server) handleDeleteClubMember(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось удалить участника")
 		return
 	}
-	s.archiveClubPlayerProfile(r, row.UserID)
-	updated, err := s.store.Queries.GetClubMembershipByID(r.Context(), sqlc.GetClubMembershipByIDParams{
+	if eraseAccount {
+		if err := s.erasePlayerAccount(ctx, q, r, row.UserID, true); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось удалить аккаунт")
+			return
+		}
+	} else {
+		if _, err := q.SetProfilePlayerStatus(ctx, sqlc.SetProfilePlayerStatusParams{
+			UserID:       row.UserID,
+			PlayerStatus: "archived",
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось скрыть профиль")
+			return
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось удалить участника")
+		return
+	}
+
+	updated, err := s.store.Queries.GetClubMembershipByID(ctx, sqlc.GetClubMembershipByIDParams{
 		ID:     id,
 		ClubID: clubID,
 	})
@@ -511,5 +544,8 @@ func (s *Server) handleDeleteClubMember(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить участника")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"member": memberFromGetRow(updated)})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"member":        memberFromGetRow(updated),
+		"account_erased": eraseAccount,
+	})
 }
