@@ -6,6 +6,10 @@ import (
 	"strings"
 )
 
+// Max JSON request body for organizer/public write endpoints.
+// Large paste payloads freeze the UI and waste DB/network; keep under 1 MiB.
+const maxJSONBodyBytes = 1 << 20
+
 type errorBody struct {
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
@@ -22,6 +26,7 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 }
 
 func decodeJSON(r *http.Request, dst any) error {
+	r.Body = http.MaxBytesReader(nil, r.Body, maxJSONBodyBytes)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	return dec.Decode(dst)

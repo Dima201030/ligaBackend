@@ -28,6 +28,18 @@ const (
 	defaultVenueName    = "Площадка организатора"
 	defaultVenueAddress = ""
 	defaultVenueCourts  = 1
+
+	tournamentTitleMin        = 3
+	tournamentTitleMax        = 120
+	tournamentDescriptionMax  = 2000
+	tournamentRegulationsMin  = 20
+	tournamentRegulationsMax  = 10000
+	tournamentVenueNameMax    = 120
+	tournamentVenueAddrMax    = 240
+	tournamentStartMaxAhead   = 6 // months
+	tournamentMaxDurationDays = 60
+	tournamentMaxParticipants = 500
+	tournamentEntryFeeMax     = 100_000_000 // RUB
 )
 
 type tournamentWriteRequest struct {
@@ -1058,13 +1070,25 @@ type parsedTournament struct {
 
 func parseTournamentWrite(req tournamentWriteRequest, creating bool) (parsedTournament, string) {
 	title := strings.TrimSpace(req.Title)
-	if utf8.RuneCountInString(title) < 3 {
+	if utf8.RuneCountInString(title) < tournamentTitleMin {
 		return parsedTournament{}, "Название турнира должно содержать минимум 3 символа"
 	}
+	if utf8.RuneCountInString(title) > tournamentTitleMax {
+		return parsedTournament{}, "Название турнира слишком длинное — максимум 120 символов"
+	}
 	description := strings.TrimSpace(req.Description)
+	if utf8.RuneCountInString(description) > tournamentDescriptionMax {
+		return parsedTournament{}, "Описание слишком длинное — максимум 2000 символов"
+	}
 	regulations := strings.TrimSpace(req.Regulations)
-	if creating && utf8.RuneCountInString(regulations) < 20 {
-		return parsedTournament{}, "Опишите регламент — минимум 20 символов"
+	regLen := utf8.RuneCountInString(regulations)
+	if creating || regLen > 0 {
+		if regLen < tournamentRegulationsMin {
+			return parsedTournament{}, "Опишите регламент — минимум 20 символов"
+		}
+		if regLen > tournamentRegulationsMax {
+			return parsedTournament{}, "Регламент слишком длинный — максимум 10000 символов"
+		}
 	}
 
 	typ, ok := parseTournamentType(req.Type)
@@ -1095,6 +1119,10 @@ func parseTournamentWrite(req tournamentWriteRequest, creating bool) (parsedTour
 	if err != nil {
 		return parsedTournament{}, "Укажите корректную дату старта (RFC3339)"
 	}
+	maxStart := time.Now().UTC().AddDate(0, tournamentStartMaxAhead, 0)
+	if startsAt.Time.After(maxStart) {
+		return parsedTournament{}, "Дата старта не может быть больше чем через 6 месяцев"
+	}
 	closesAt, err := parseRFC3339(req.RegistrationClosesAt)
 	if err != nil {
 		return parsedTournament{}, "Укажите корректный дедлайн регистрации (RFC3339)"
@@ -1108,7 +1136,7 @@ func parseTournamentWrite(req tournamentWriteRequest, creating bool) (parsedTour
 	} else if creating {
 		opensAt = pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 	}
-	if closesAt.Time.After(startsAt.Time) {
+	if !closesAt.Time.Before(startsAt.Time) {
 		return parsedTournament{}, "Регистрация должна закрыться до старта турнира"
 	}
 	if opensAt.Time.After(closesAt.Time) {
@@ -1121,14 +1149,20 @@ func parseTournamentWrite(req tournamentWriteRequest, creating bool) (parsedTour
 		if err != nil {
 			return parsedTournament{}, "Укажите корректную дату окончания (RFC3339)"
 		}
+		if endsAt.Time.Before(startsAt.Time) {
+			return parsedTournament{}, "Дата окончания не может быть раньше старта"
+		}
+		if endsAt.Time.After(startsAt.Time.AddDate(0, 0, tournamentMaxDurationDays)) {
+			return parsedTournament{}, "Турнир не может длиться больше 60 дней"
+		}
 	}
 
 	maxParticipants := int32(16)
 	if req.MaxParticipants != nil {
 		maxParticipants = *req.MaxParticipants
 	}
-	if maxParticipants < 2 || maxParticipants > 256 {
-		return parsedTournament{}, "Вместимость должна быть от 2 до 256"
+	if maxParticipants < 2 || maxParticipants > tournamentMaxParticipants {
+		return parsedTournament{}, "Вместимость должна быть от 2 до 500"
 	}
 	entryFee := int32(0)
 	if req.EntryFee != nil {
@@ -1137,14 +1171,23 @@ func parseTournamentWrite(req tournamentWriteRequest, creating bool) (parsedTour
 	if entryFee < 0 {
 		return parsedTournament{}, "Взнос не может быть отрицательным"
 	}
+	if entryFee > tournamentEntryFeeMax {
+		return parsedTournament{}, "Взнос слишком большой — максимум 100000000 ₽"
+	}
 
 	venueName := strings.TrimSpace(req.VenueName)
 	if venueName == "" {
 		venueName = defaultVenueName
 	}
+	if utf8.RuneCountInString(venueName) > tournamentVenueNameMax {
+		return parsedTournament{}, "Название площадки слишком длинное — максимум 120 символов"
+	}
 	venueAddress := strings.TrimSpace(req.VenueAddress)
 	if venueAddress == "" {
 		venueAddress = defaultVenueAddress
+	}
+	if utf8.RuneCountInString(venueAddress) > tournamentVenueAddrMax {
+		return parsedTournament{}, "Адрес площадки слишком длинный — максимум 240 символов"
 	}
 	venueCourts := int32(defaultVenueCourts)
 	if req.VenueCourts != nil {

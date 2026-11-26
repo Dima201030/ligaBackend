@@ -56,6 +56,20 @@ type pageJSON struct {
 	UpdatedAt    string `json:"updated_at"`
 }
 
+const (
+	contentTitleMin      = 3
+	contentTitleMax      = 120
+	newsExcerptMax       = 500
+	newsBodyTotalMax     = 20000
+	eventDescriptionMax  = 4000
+	eventLocationMax     = 200
+	pageTitleMin         = 2
+	pageTitleMax         = 120
+	pageBodyMarkdownMax  = 50000
+	contentStartMaxAhead = 6 // months
+	eventSeatsMax        = 500
+)
+
 type newsWriteRequest struct {
 	Title       string   `json:"title"`
 	Slug        string   `json:"slug"`
@@ -373,15 +387,24 @@ func (s *Server) handleUpsertPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	title := strings.TrimSpace(req.Title)
-	if utf8.RuneCountInString(title) < 2 {
+	if utf8.RuneCountInString(title) < pageTitleMin {
 		writeError(w, http.StatusBadRequest, "validation", "Заголовок слишком короткий")
+		return
+	}
+	if utf8.RuneCountInString(title) > pageTitleMax {
+		writeError(w, http.StatusBadRequest, "validation", "Заголовок слишком длинный — максимум 120 символов")
+		return
+	}
+	bodyMarkdown := strings.TrimSpace(req.BodyMarkdown)
+	if utf8.RuneCountInString(bodyMarkdown) > pageBodyMarkdownMax {
+		writeError(w, http.StatusBadRequest, "validation", "Текст страницы слишком длинный — максимум 50000 символов")
 		return
 	}
 	row, err := s.store.Queries.UpsertPage(r.Context(), sqlc.UpsertPageParams{
 		
 		ClubID: s.currentClubID(r),Slug:         slug,
 		Title:        title,
-		BodyMarkdown: req.BodyMarkdown,
+		BodyMarkdown: bodyMarkdown,
 		UpdatedBy:    actor.ID,
 	})
 	if err != nil {
@@ -393,9 +416,18 @@ func (s *Server) handleUpsertPage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) buildNewsCreate(r *http.Request, actor *auth.SessionUser, req newsWriteRequest) (sqlc.CreateNewsPostParams, error) {
 	title := strings.TrimSpace(req.Title)
-	if utf8.RuneCountInString(title) < 3 {
+	if utf8.RuneCountInString(title) < contentTitleMin {
 		return sqlc.CreateNewsPostParams{
 		ClubID: s.currentClubID(r),}, errors.New("Заголовок слишком короткий")
+	}
+	if utf8.RuneCountInString(title) > contentTitleMax {
+		return sqlc.CreateNewsPostParams{
+		ClubID: s.currentClubID(r),}, errors.New("Заголовок слишком длинный — максимум 120 символов")
+	}
+	excerpt := strings.TrimSpace(req.Excerpt)
+	if utf8.RuneCountInString(excerpt) > newsExcerptMax {
+		return sqlc.CreateNewsPostParams{
+		ClubID: s.currentClubID(r),}, errors.New("Лид слишком длинный — максимум 500 символов")
 	}
 	slug := strings.TrimSpace(req.Slug)
 	if slug == "" {
@@ -408,6 +440,10 @@ func (s *Server) buildNewsCreate(r *http.Request, actor *auth.SessionUser, req n
 		ClubID: s.currentClubID(r),}, err
 	}
 	body := normalizeBody(req.Body)
+	if err := validateNewsBody(body); err != nil {
+		return sqlc.CreateNewsPostParams{
+		ClubID: s.currentClubID(r),}, err
+	}
 	bodyJSON, _ := json.Marshal(body)
 	author := strings.TrimSpace(req.AuthorName)
 	if author == "" {
@@ -423,7 +459,7 @@ func (s *Server) buildNewsCreate(r *http.Request, actor *auth.SessionUser, req n
 		
 		ClubID: s.currentClubID(r),Slug:        slug,
 		Title:       title,
-		Excerpt:     strings.TrimSpace(req.Excerpt),
+		Excerpt:     excerpt,
 		BodyJson:    bodyJSON,
 		CoverUrl:    cover,
 		Tag:         strings.TrimSpace(req.Tag),
@@ -440,8 +476,11 @@ func buildNewsUpdate(existing sqlc.NewsPost, req newsWriteRequest) (sqlc.UpdateN
 	if title == "" {
 		title = existing.Title
 	}
-	if utf8.RuneCountInString(title) < 3 {
+	if utf8.RuneCountInString(title) < contentTitleMin {
 		return sqlc.UpdateNewsPostParams{}, errors.New("Заголовок слишком короткий")
+	}
+	if utf8.RuneCountInString(title) > contentTitleMax {
+		return sqlc.UpdateNewsPostParams{}, errors.New("Заголовок слишком длинный — максимум 120 символов")
 	}
 	status := existing.Status
 	if strings.TrimSpace(req.Status) != "" {
@@ -454,11 +493,17 @@ func buildNewsUpdate(existing sqlc.NewsPost, req newsWriteRequest) (sqlc.UpdateN
 	body := existingBody(existing.BodyJson)
 	if req.Body != nil {
 		body = normalizeBody(req.Body)
+		if err := validateNewsBody(body); err != nil {
+			return sqlc.UpdateNewsPostParams{}, err
+		}
 	}
 	bodyJSON, _ := json.Marshal(body)
 	excerpt := existing.Excerpt
 	if req.Excerpt != "" || req.Body != nil {
 		excerpt = strings.TrimSpace(req.Excerpt)
+		if utf8.RuneCountInString(excerpt) > newsExcerptMax {
+			return sqlc.UpdateNewsPostParams{}, errors.New("Лид слишком длинный — максимум 500 символов")
+		}
 	}
 	tag := existing.Tag
 	if req.Tag != "" {
@@ -492,9 +537,23 @@ func buildNewsUpdate(existing sqlc.NewsPost, req newsWriteRequest) (sqlc.UpdateN
 
 func (s *Server) buildEventCreate(r *http.Request, actor *auth.SessionUser, req eventWriteRequest) (sqlc.CreateClubEventParams, error) {
 	title := strings.TrimSpace(req.Title)
-	if utf8.RuneCountInString(title) < 3 {
+	if utf8.RuneCountInString(title) < contentTitleMin {
 		return sqlc.CreateClubEventParams{
 		ClubID: s.currentClubID(r),}, errors.New("Заголовок слишком короткий")
+	}
+	if utf8.RuneCountInString(title) > contentTitleMax {
+		return sqlc.CreateClubEventParams{
+		ClubID: s.currentClubID(r),}, errors.New("Заголовок слишком длинный — максимум 120 символов")
+	}
+	description := strings.TrimSpace(req.Description)
+	if utf8.RuneCountInString(description) > eventDescriptionMax {
+		return sqlc.CreateClubEventParams{
+		ClubID: s.currentClubID(r),}, errors.New("Описание слишком длинное — максимум 4000 символов")
+	}
+	location := strings.TrimSpace(req.Location)
+	if utf8.RuneCountInString(location) > eventLocationMax {
+		return sqlc.CreateClubEventParams{
+		ClubID: s.currentClubID(r),}, errors.New("Место слишком длинное — максимум 200 символов")
 	}
 	slug := strings.TrimSpace(req.Slug)
 	if slug == "" {
@@ -516,11 +575,19 @@ func (s *Server) buildEventCreate(r *http.Request, actor *auth.SessionUser, req 
 		return sqlc.CreateClubEventParams{
 		ClubID: s.currentClubID(r),}, errors.New("Некорректная дата starts_at")
 	}
+	if starts.UTC().After(time.Now().UTC().AddDate(0, contentStartMaxAhead, 0)) {
+		return sqlc.CreateClubEventParams{
+		ClubID: s.currentClubID(r),}, errors.New("Дата события не может быть больше чем через 6 месяцев")
+	}
 	var seats pgtype.Int4
 	if req.SeatsLeft != nil {
 		if *req.SeatsLeft < 0 {
 			return sqlc.CreateClubEventParams{
 		ClubID: s.currentClubID(r),}, errors.New("seats_left не может быть отрицательным")
+		}
+		if *req.SeatsLeft > eventSeatsMax {
+			return sqlc.CreateClubEventParams{
+		ClubID: s.currentClubID(r),}, errors.New("Число мест слишком большое — максимум 500")
 		}
 		seats = pgtype.Int4{Int32: *req.SeatsLeft, Valid: true}
 	}
@@ -529,9 +596,9 @@ func (s *Server) buildEventCreate(r *http.Request, actor *auth.SessionUser, req 
 		ClubID: s.currentClubID(r),Slug:        slug,
 		Title:       title,
 		Kind:        kind,
-		Description: strings.TrimSpace(req.Description),
+		Description: description,
 		StartsAt:    pgtype.Timestamptz{Time: starts.UTC(), Valid: true},
-		Location:    strings.TrimSpace(req.Location),
+		Location:    location,
 		CoverUrl:    optionalTextPtr(req.CoverURL),
 		SeatsLeft:   seats,
 		Status:      status,
@@ -544,8 +611,11 @@ func buildEventUpdate(existing sqlc.ClubEvent, req eventWriteRequest) (sqlc.Upda
 	if title == "" {
 		title = existing.Title
 	}
-	if utf8.RuneCountInString(title) < 3 {
+	if utf8.RuneCountInString(title) < contentTitleMin {
 		return sqlc.UpdateClubEventParams{}, errors.New("Заголовок слишком короткий")
+	}
+	if utf8.RuneCountInString(title) > contentTitleMax {
+		return sqlc.UpdateClubEventParams{}, errors.New("Заголовок слишком длинный — максимум 120 символов")
 	}
 	kind := existing.Kind
 	if strings.TrimSpace(req.Kind) != "" {
@@ -569,15 +639,24 @@ func buildEventUpdate(existing sqlc.ClubEvent, req eventWriteRequest) (sqlc.Upda
 		if err != nil {
 			return sqlc.UpdateClubEventParams{}, errors.New("Некорректная дата starts_at")
 		}
+		if t.UTC().After(time.Now().UTC().AddDate(0, contentStartMaxAhead, 0)) {
+			return sqlc.UpdateClubEventParams{}, errors.New("Дата события не может быть больше чем через 6 месяцев")
+		}
 		starts = pgtype.Timestamptz{Time: t.UTC(), Valid: true}
 	}
 	desc := existing.Description
 	if req.Description != "" {
 		desc = strings.TrimSpace(req.Description)
+		if utf8.RuneCountInString(desc) > eventDescriptionMax {
+			return sqlc.UpdateClubEventParams{}, errors.New("Описание слишком длинное — максимум 4000 символов")
+		}
 	}
 	loc := existing.Location
 	if req.Location != "" {
 		loc = strings.TrimSpace(req.Location)
+		if utf8.RuneCountInString(loc) > eventLocationMax {
+			return sqlc.UpdateClubEventParams{}, errors.New("Место слишком длинное — максимум 200 символов")
+		}
 	}
 	cover := existing.CoverUrl
 	if req.CoverURL != nil {
@@ -587,6 +666,9 @@ func buildEventUpdate(existing sqlc.ClubEvent, req eventWriteRequest) (sqlc.Upda
 	if req.SeatsLeft != nil {
 		if *req.SeatsLeft < 0 {
 			return sqlc.UpdateClubEventParams{}, errors.New("seats_left не может быть отрицательным")
+		}
+		if *req.SeatsLeft > eventSeatsMax {
+			return sqlc.UpdateClubEventParams{}, errors.New("Число мест слишком большое — максимум 500")
 		}
 		seats = pgtype.Int4{Int32: *req.SeatsLeft, Valid: true}
 	}
@@ -690,6 +772,17 @@ func normalizeBody(body []string) []string {
 		}
 	}
 	return out
+}
+
+func validateNewsBody(body []string) error {
+	total := 0
+	for _, part := range body {
+		total += utf8.RuneCountInString(part)
+		if total > newsBodyTotalMax {
+			return errors.New("Текст новости слишком длинный — максимум 20000 символов")
+		}
+	}
+	return nil
 }
 
 func existingBody(raw []byte) []string {
