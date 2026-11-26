@@ -65,6 +65,24 @@ func (q *Queries) GetVerificationTokenByHash(ctx context.Context, tokenHash []by
 	return i, err
 }
 
+const invalidateUnusedTokens = `-- name: InvalidateUnusedTokens :exec
+UPDATE verification_tokens
+SET used_at = now()
+WHERE user_id = $1
+  AND kind = $2
+  AND used_at IS NULL
+`
+
+type InvalidateUnusedTokensParams struct {
+	UserID pgtype.UUID
+	Kind   VerificationKind
+}
+
+func (q *Queries) InvalidateUnusedTokens(ctx context.Context, arg InvalidateUnusedTokensParams) error {
+	_, err := q.db.Exec(ctx, invalidateUnusedTokens, arg.UserID, arg.Kind)
+	return err
+}
+
 const markVerificationTokenUsed = `-- name: MarkVerificationTokenUsed :one
 UPDATE verification_tokens
 SET used_at = now()

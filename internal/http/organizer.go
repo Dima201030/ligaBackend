@@ -21,7 +21,7 @@ type approveRequest struct {
 }
 
 func (s *Server) handleListApplications(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.store.Queries.ListApplications(r.Context())
+	rows, err := s.store.Queries.ListApplications(r.Context(), s.currentClubID(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить заявки")
 		return
@@ -141,7 +141,7 @@ func (s *Server) handleApproveApplication(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	_ = mail.Enqueue(ctx, s.store, s.cfg, user.Email, "application_approved", map[string]any{
+	_ = mail.Enqueue(ctx, s.store, s.cfg, emailString(user.Email), "application_approved", map[string]any{
 		"first_name": firstName,
 		"last_name":  lastName,
 		"level":      level,
@@ -218,7 +218,7 @@ func (s *Server) handleRejectApplication(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_ = mail.Enqueue(ctx, s.store, s.cfg, user.Email, "application_rejected", map[string]any{
+	_ = mail.Enqueue(ctx, s.store, s.cfg, emailString(user.Email), "application_rejected", map[string]any{
 		"first_name": user.FirstName,
 		"last_name":  user.LastName,
 	})

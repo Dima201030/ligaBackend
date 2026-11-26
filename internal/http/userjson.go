@@ -23,6 +23,10 @@ type userJSON struct {
 }
 
 func sessionUserJSON(u *auth.SessionUser) userJSON {
+	var phone *string
+	if u.Phone != nil {
+		phone = publicPhoneString(*u.Phone)
+	}
 	return userJSON{
 		ID:            uuidString(u.ID),
 		Email:         u.Email,
@@ -32,26 +36,21 @@ func sessionUserJSON(u *auth.SessionUser) userJSON {
 		Status:        string(u.Status),
 		EmailVerified: u.EmailVerifiedAt.Valid,
 		Level:         u.Level,
-		Phone:         u.Phone,
+		Phone:         phone,
 	}
 }
 
 func userWithProfileJSON(u sqlc.User, level string, phone pgtype.Text, created, updated pgtype.Timestamptz) userJSON {
-	var p *string
-	if phone.Valid {
-		v := phone.String
-		p = &v
-	}
 	out := userJSON{
 		ID:            uuidString(u.ID),
-		Email:         u.Email,
+		Email:         emailString(u.Email),
 		FirstName:     u.FirstName,
 		LastName:      u.LastName,
 		Role:          string(u.Role),
 		Status:        string(u.Status),
 		EmailVerified: u.EmailVerifiedAt.Valid,
 		Level:         level,
-		Phone:         p,
+		Phone:         publicPhone(phone),
 	}
 	if created.Valid {
 		out.CreatedAt = created.Time.UTC().Format(time.RFC3339)
@@ -76,19 +75,14 @@ type applicationJSON struct {
 }
 
 func applicationFromRow(row sqlc.ListApplicationsRow) applicationJSON {
-	var phone *string
-	if row.Phone.Valid {
-		v := row.Phone.String
-		phone = &v
-	}
 	out := applicationJSON{
 		ID:            uuidString(row.ID),
-		Email:         row.Email,
+		Email:         emailString(row.Email),
 		FirstName:     row.FirstName,
 		LastName:      row.LastName,
 		Status:        string(row.Status),
 		Level:         row.Level,
-		Phone:         phone,
+		Phone:         publicPhone(row.Phone),
 		EmailVerified: row.EmailVerifiedAt.Valid,
 		SubmittedAt:   row.CreatedAt.Time.UTC().Format(time.RFC3339),
 	}

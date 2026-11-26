@@ -8,10 +8,13 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Dima201030/ligaBackend/internal/clubs"
 	"github.com/Dima201030/ligaBackend/internal/config"
 	"github.com/Dima201030/ligaBackend/internal/crypto"
 	"github.com/Dima201030/ligaBackend/internal/db"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
+	"github.com/Dima201030/ligaBackend/internal/rating"
+	"github.com/Dima201030/ligaBackend/internal/uuidx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -42,19 +45,40 @@ func main() {
 	}
 	defer store.Close()
 
-	existing, err := store.Queries.GetUserByEmail(ctx, email)
+	hash, err := crypto.HashPassword(password)
+	if err != nil {
+		log.Fatalf("hash: %v", err)
+	}
+
+	existing, err := store.Queries.GetUserByEmail(ctx, pgtype.Text{String: email, Valid: true})
 	if err == nil {
-		fmt.Printf("organizer already exists: id=%s email=%s status=%s role=%s\n",
-			uuidString(existing.ID), existing.Email, existing.Status, existing.Role)
+		reset := strings.TrimSpace(os.Getenv("SEED_ORGANIZER_RESET")) == "1"
+		if !reset {
+			fmt.Printf("organizer already exists: id=%s email=%s status=%s role=%s\n",
+				uuidString(existing.ID), existing.Email.String, existing.Status, existing.Role)
+			fmt.Println("set SEED_ORGANIZER_RESET=1 to update password/role/status")
+			return
+		}
+		_, err = store.Pool.Exec(ctx, `
+			UPDATE users
+			SET password_hash = $1,
+			    first_name = $2,
+			    last_name = $3,
+			    role = 'organizer',
+			    status = 'approved',
+			    email_verified_at = COALESCE(email_verified_at, now()),
+			    updated_at = now()
+			WHERE id = $4
+		`, hash, firstName, lastName, existing.ID)
+		if err != nil {
+			log.Fatalf("reset organizer: %v", err)
+		}
+		fmt.Printf("updated organizer: id=%s email=%s role=organizer status=approved\n",
+			uuidString(existing.ID), existing.Email.String)
 		return
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		log.Fatalf("lookup: %v", err)
-	}
-
-	hash, err := crypto.HashPassword(password)
-	if err != nil {
-		log.Fatalf("hash: %v", err)
 	}
 
 	tx, err := store.Pool.Begin(ctx)
@@ -65,7 +89,7 @@ func main() {
 	q := store.Queries.WithTx(tx)
 
 	user, err := q.CreateUserVerified(ctx, sqlc.CreateUserVerifiedParams{
-		Email:        email,
+		Email:        pgtype.Text{String: email, Valid: true},
 		PasswordHash: hash,
 		FirstName:    firstName,
 		LastName:     lastName,
@@ -75,18 +99,26 @@ func main() {
 	if err != nil {
 		log.Fatalf("create user: %v", err)
 	}
-	if _, err := q.CreateProfile(ctx, sqlc.CreateProfileParams{
-		UserID: user.ID,
-		Level:  level,
-	}); err != nil {
+	clubID := clubs.DefaultUUID()
+	if _, err := q.CreateProfile(ctx, rating.NewProfileParams(
+		user.ID, clubID, pgtype.Text{}, level, firstName, lastName,
+	)); err != nil {
 		log.Fatalf("create profile: %v", err)
+	}
+	if _, err := q.CreateClubMembership(ctx, sqlc.CreateClubMembershipParams{
+		ClubID: clubID,
+		UserID: user.ID,
+		Role:   sqlc.ClubMemberRoleOrganizer,
+		Status: sqlc.ClubMemberStatusActive,
+	}); err != nil {
+		log.Fatalf("create membership: %v", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		log.Fatalf("commit: %v", err)
 	}
 
 	fmt.Printf("seeded organizer: id=%s email=%s role=%s status=%s\n",
-		uuidString(user.ID), user.Email, user.Role, user.Status)
+		uuidString(user.ID), user.Email.String, user.Role, user.Status)
 }
 
 func envOr(key, fallback string) string {
@@ -97,9 +129,5 @@ func envOr(key, fallback string) string {
 }
 
 func uuidString(id pgtype.UUID) string {
-	if !id.Valid {
-		return ""
-	}
-	b := id.Bytes
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+	return uuidx.String(id)
 }

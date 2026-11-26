@@ -12,6 +12,7 @@ import (
 	"github.com/Dima201030/ligaBackend/internal/crypto"
 	"github.com/Dima201030/ligaBackend/internal/db/sqlc"
 	"github.com/Dima201030/ligaBackend/internal/mail"
+	"github.com/Dima201030/ligaBackend/internal/rating"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -25,12 +26,15 @@ const (
 )
 
 type registerRequest struct {
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-	Email     string `json:"email"`
-	Password  string `json:"password"`
-	Phone     string `json:"phone"`
-	Level     string `json:"level"`
+	FirstName           string `json:"first_name"`
+	LastName            string `json:"last_name"`
+	Email               string `json:"email"`
+	Password            string `json:"password"`
+	Phone               string `json:"phone"`
+	Level               string `json:"level"`
+	ConsentPDN          bool   `json:"consent_pdn"`
+	ConsentPublicProfile bool  `json:"consent_public_profile"`
+	ConsentMarketing    bool   `json:"consent_marketing"`
 }
 
 type loginRequest struct {
@@ -71,6 +75,14 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation", "Укажите уровень из списка взрослых категорий")
 		return
 	}
+	if !req.ConsentPDN {
+		writeError(w, http.StatusBadRequest, "consent_required", "Нужно согласие на обработку персональных данных")
+		return
+	}
+	if !req.ConsentPublicProfile {
+		writeError(w, http.StatusBadRequest, "consent_required", "Нужно согласие на публикацию профиля и результатов")
+		return
+	}
 
 	ip := remoteIPString(r)
 	if !s.limiter.Allow(registerRateLimitKey + ip + ":" + email) {
@@ -94,7 +106,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	q := s.store.Queries.WithTx(tx)
 
 	user, err := q.CreateUser(ctx, sqlc.CreateUserParams{
-		Email:        email,
+		Email:        textEmail(email),
 		PasswordHash: hash,
 		FirstName:    firstName,
 		LastName:     lastName,
@@ -111,14 +123,36 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := q.CreateProfile(ctx, sqlc.CreateProfileParams{
-		UserID: user.ID,
-		Phone:  auth.TextOrNull(phone),
-		Level:  level,
-	})
+	clubID := s.currentClubID(r)
+	profile, err := q.CreateProfile(ctx, rating.NewProfileParams(
+		user.ID, clubID, auth.TextOrNull(phone), level, firstName, lastName,
+	))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось создать аккаунт")
 		return
+	}
+	if _, err := q.CreateClubMembership(ctx, sqlc.CreateClubMembershipParams{
+		ClubID: clubID,
+		UserID: user.ID,
+		Role:   sqlc.ClubMemberRolePlayer,
+		Status: sqlc.ClubMemberStatusActive,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось создать аккаунт")
+		return
+	}
+	if err := s.recordConsent(r, q, user.ID, "pdn_processing", true); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось сохранить согласие")
+		return
+	}
+	if err := s.recordConsent(r, q, user.ID, "public_profile", true); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось сохранить согласие")
+		return
+	}
+	if req.ConsentMarketing {
+		if err := s.recordConsent(r, q, user.ID, "marketing", true); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось сохранить согласие")
+			return
+		}
 	}
 
 	rawToken, err := crypto.RandomBytes(32)
@@ -181,7 +215,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	user, err := s.store.Queries.GetUserByEmail(ctx, email)
+	user, err := s.store.Queries.GetUserByEmail(ctx, textEmail(email))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusUnauthorized, "invalid_credentials", "Неверный email или пароль")
@@ -255,15 +289,6 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": sessionUserJSON(user)})
-}
-
 func (s *Server) handleConfirmEmail(w http.ResponseWriter, r *http.Request) {
 	token := ""
 	if r.Method == http.MethodGet {
@@ -332,7 +357,7 @@ func (s *Server) handleConfirmEmail(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":    true,
-		"email": user.Email,
+		"email": emailString(user.Email),
 	})
 }
 
