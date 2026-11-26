@@ -24,10 +24,18 @@ RETURNING *;
 
 -- name: SetTournamentCover :one
 UPDATE tournaments
-SET cover_file_id = $2,
-    cover_url = $3,
+SET cover_file_id = $3,
+    cover_url = $4,
     updated_at = now()
-WHERE id = $1
+WHERE club_id = $1 AND id = $2
+RETURNING *;
+
+-- name: ClearTournamentCover :one
+UPDATE tournaments
+SET cover_file_id = NULL,
+    cover_url = NULL,
+    updated_at = now()
+WHERE club_id = $1 AND id = $2
 RETURNING *;
 
 -- name: SetNewsCover :one
