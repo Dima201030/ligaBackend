@@ -57,7 +57,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	lastName := strings.TrimSpace(req.LastName)
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	phone := strings.TrimSpace(req.Phone)
-	level := strings.TrimSpace(req.Level)
+	level, levelOK := auth.ResolveLevel(req.Level)
 
 	if firstName == "" || lastName == "" || email == "" {
 		writeError(w, http.StatusBadRequest, "validation", "Заполните имя, фамилию и email")
@@ -71,8 +71,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "validation", "Пароль должен содержать минимум 8 символов")
 		return
 	}
-	if !auth.ValidLevel(level) {
-		writeError(w, http.StatusBadRequest, "validation", "Укажите уровень из списка взрослых категорий")
+	if !levelOK {
+		writeError(w, http.StatusBadRequest, "validation", "Некорректный уровень")
 		return
 	}
 	if !req.ConsentPDN {

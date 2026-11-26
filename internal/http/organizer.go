@@ -53,13 +53,8 @@ func (s *Server) handleApproveApplication(w http.ResponseWriter, r *http.Request
 	}
 	firstName := strings.TrimSpace(req.FirstName)
 	lastName := strings.TrimSpace(req.LastName)
-	level := strings.TrimSpace(req.Level)
 	if firstName == "" || lastName == "" {
 		writeError(w, http.StatusBadRequest, "validation", "Имя и фамилия не могут быть пустыми — проверьте данные перед подтверждением.")
-		return
-	}
-	if !auth.ValidLevel(level) {
-		writeError(w, http.StatusBadRequest, "validation", "Укажите уровень из списка взрослых категорий")
 		return
 	}
 
@@ -84,6 +79,17 @@ func (s *Server) handleApproveApplication(w http.ResponseWriter, r *http.Request
 	beforeProfile, err := q.GetProfileByUserID(ctx, id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось подтвердить заявку")
+		return
+	}
+
+	// Level is deprecated in player UX; keep existing profile value when omitted.
+	rawLevel := strings.TrimSpace(req.Level)
+	if rawLevel == "" {
+		rawLevel = beforeProfile.Level
+	}
+	level, levelOK := auth.ResolveLevel(rawLevel)
+	if !levelOK {
+		writeError(w, http.StatusBadRequest, "validation", "Некорректный уровень")
 		return
 	}
 

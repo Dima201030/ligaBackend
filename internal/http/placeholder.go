@@ -47,7 +47,7 @@ func (s *Server) handleCreatePlaceholderPlayer(w http.ResponseWriter, r *http.Re
 
 	firstName := strings.TrimSpace(req.FirstName)
 	lastName := strings.TrimSpace(req.LastName)
-	level := strings.TrimSpace(req.Level)
+	level, levelOK := auth.ResolveLevel(req.Level)
 	phone := ""
 	if req.Phone != nil {
 		phone = strings.TrimSpace(*req.Phone)
@@ -61,8 +61,8 @@ func (s *Server) handleCreatePlaceholderPlayer(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "validation", "Слишком длинное имя или фамилия")
 		return
 	}
-	if !auth.ValidLevel(level) {
-		writeError(w, http.StatusBadRequest, "validation", "Укажите уровень из списка взрослых категорий")
+	if !levelOK {
+		writeError(w, http.StatusBadRequest, "validation", "Некорректный уровень")
 		return
 	}
 
