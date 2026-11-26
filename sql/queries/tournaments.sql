@@ -106,6 +106,23 @@ SELECT EXISTS(
     SELECT 1 FROM tournaments WHERE club_id = $1 AND slug = $2
 )::bool AS exists;
 
+-- name: SetTournamentCreatedByIfNull :exec
+UPDATE tournaments
+SET created_by = $2,
+    updated_at = now()
+WHERE id = $1
+  AND created_by IS NULL;
+
+-- name: GetTournamentCreateActor :one
+SELECT actor_id
+FROM audit_log
+WHERE action = 'tournament.create'
+  AND entity = 'tournament'
+  AND entity_id = $1
+  AND actor_id IS NOT NULL
+ORDER BY created_at ASC
+LIMIT 1;
+
 -- name: CreateTournamentRuleVersion :one
 INSERT INTO tournament_rule_versions (
     tournament_id, version, rules, text_markdown, created_by

@@ -520,6 +520,44 @@ func (q *Queries) ListPlayerBriefsByIDs(ctx context.Context, dollar_1 []pgtype.U
 	return items, nil
 }
 
+const listUserContactBriefsByIDs = `-- name: ListUserContactBriefsByIDs :many
+SELECT id, email, first_name, last_name
+FROM users
+WHERE id = ANY($1::uuid[])
+`
+
+type ListUserContactBriefsByIDsRow struct {
+	ID        pgtype.UUID
+	Email     pgtype.Text
+	FirstName string
+	LastName  string
+}
+
+func (q *Queries) ListUserContactBriefsByIDs(ctx context.Context, dollar_1 []pgtype.UUID) ([]ListUserContactBriefsByIDsRow, error) {
+	rows, err := q.db.Query(ctx, listUserContactBriefsByIDs, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUserContactBriefsByIDsRow{}
+	for rows.Next() {
+		var i ListUserContactBriefsByIDsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.FirstName,
+			&i.LastName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markEmailVerified = `-- name: MarkEmailVerified :one
 UPDATE users
 SET email_verified_at = now(), updated_at = now()
