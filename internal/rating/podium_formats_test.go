@@ -56,7 +56,7 @@ func TestDerivePodiumGroupsPlayoffUsesChampionshipFinal(t *testing.T) {
 	}
 
 	got := DerivePodiumPlaces(sqlc.TournamentFormatGroupsPlayoff, matches, sides)
-	if len(got) != 3 {
+	if len(got) != 4 {
 		t.Fatalf("places=%d %#v", len(got), got)
 	}
 	if uuidKey(got[0].PlayerIDs[0]) != uuidKey(p1) {
@@ -67,6 +67,9 @@ func TestDerivePodiumGroupsPlayoffUsesChampionshipFinal(t *testing.T) {
 	}
 	if uuidKey(got[2].PlayerIDs[0]) != uuidKey(p4) {
 		t.Fatalf("3rd=%s", uuidKey(got[2].PlayerIDs[0]))
+	}
+	if uuidKey(got[3].PlayerIDs[0]) != uuidKey(p3) {
+		t.Fatalf("4th=%s", uuidKey(got[3].PlayerIDs[0]))
 	}
 }
 

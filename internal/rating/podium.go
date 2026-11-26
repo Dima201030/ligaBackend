@@ -7,17 +7,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// PodiumPlace is a finishing slot for the public/organizer podium (places 1..3).
+// PodiumPlace is a finishing slot for the public/organizer podium (places 1..4).
 type PodiumPlace struct {
 	Place     int
 	PlayerIDs []pgtype.UUID
 }
 
-// DerivePodiumPlaces computes places 1..3 from finished bracket matches.
+// DerivePodiumPlaces computes places 1..4 from finished bracket matches.
 //
-//   - olympic / groups_playoff: championship final → 1/2; third_place winner → 3;
-//     without a third-place match, singles SF losers share place 3 (≤2 players).
-//   - double_elimination: first three places from ComputeDEPlaces.
+//   - olympic / groups_playoff: championship final → 1/2; third_place winner → 3,
+//     loser → 4; without a third-place match, singles SF losers take 3 and 4.
+//   - double_elimination: first four places from ComputeDEPlaces.
 //   - round_robin: empty (standings podium not derived here).
 //
 // Never assigns the same player to two places. Incomplete draws yield partial results.
@@ -42,7 +42,7 @@ func podiumFromDE(matches []sqlc.Match, sides []sqlc.MatchSide) []PodiumPlace {
 	byPlace := map[int][]pgtype.UUID{}
 	for _, id := range players {
 		p := raw[uuidKey(id)]
-		if p < 1 || p > 3 {
+		if p < 1 || p > 4 {
 			continue
 		}
 		byPlace[p] = append(byPlace[p], id)
@@ -87,8 +87,9 @@ func podiumFromKnockout(matches []sqlc.Match, sides []sqlc.MatchSide) []PodiumPl
 		s1, s2 := sidesForMatch(byMatch[uuidKey(tp.ID)])
 		fm := finishedMatch{match: *tp, side1: s1, side2: s2, winner: tp.WinnerSide.Int16}
 		assign(3, winnersOf(fm))
-	} else if final != nil && byPlace[3] == nil {
-		// No bronze match: shared 3rd for singles SF losers (one player per side).
+		assign(4, losersOf(fm))
+	} else if final != nil && byPlace[3] == nil && byPlace[4] == nil {
+		// No bronze match: singles SF losers take separate 3rd and 4th places.
 		var losers []pgtype.UUID
 		singlesOK := true
 		for _, m := range matches {
@@ -111,8 +112,14 @@ func podiumFromKnockout(matches []sqlc.Match, sides []sqlc.MatchSide) []PodiumPl
 			}
 			losers = append(losers, sideLosers...)
 		}
-		if singlesOK && len(losers) > 0 && len(losers) <= 2 {
-			assign(3, losers)
+		if singlesOK && len(losers) > 0 {
+			sort.SliceStable(losers, func(i, j int) bool {
+				return uuidKey(losers[i]) < uuidKey(losers[j])
+			})
+			assign(3, losers[:1])
+			if len(losers) > 1 {
+				assign(4, losers[1:2])
+			}
 		}
 	}
 
@@ -120,8 +127,8 @@ func podiumFromKnockout(matches []sqlc.Match, sides []sqlc.MatchSide) []PodiumPl
 }
 
 func podiumSlots(byPlace map[int][]pgtype.UUID) []PodiumPlace {
-	out := make([]PodiumPlace, 0, 3)
-	for place := 1; place <= 3; place++ {
+	out := make([]PodiumPlace, 0, 4)
+	for place := 1; place <= 4; place++ {
 		ids := byPlace[place]
 		if len(ids) == 0 {
 			continue
