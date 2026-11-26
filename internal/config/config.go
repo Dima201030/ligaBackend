@@ -120,6 +120,22 @@ func (c Config) EmailConfirmURL(token string) string {
 	return ""
 }
 
+// PasswordResetURL builds the link placed in password_reset outbox payloads.
+// Prefer the Next.js page when FRONT_BASE_URL is set; otherwise fall back to the API route.
+func (c Config) PasswordResetURL(token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ""
+	}
+	if c.FrontBaseURL != "" {
+		return c.FrontBaseURL + "/reset-password?token=" + token
+	}
+	if c.PublicBaseURL != "" {
+		return c.PublicBaseURL + "/api/auth/reset-password?token=" + token
+	}
+	return ""
+}
+
 func envOr(key, fallback string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v

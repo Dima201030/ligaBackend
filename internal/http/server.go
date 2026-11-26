@@ -81,6 +81,7 @@ func NewWithOptions(opts Options) *Server {
 		r.Post("/confirm-email", s.handleConfirmEmail)
 		r.Post("/resend-confirm", s.handleResendConfirm)
 		r.Post("/forgot-password", s.handleForgotPassword)
+		r.Get("/reset-password", s.handleResetPassword)
 		r.Post("/reset-password", s.handleResetPassword)
 		r.With(s.requireAuth).Post("/sso/issue", s.handleSSOIssue)
 		r.Get("/sso/consume", s.handleSSOConsume)
