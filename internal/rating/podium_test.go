@@ -154,6 +154,27 @@ func TestPodiumMismatch(t *testing.T) {
 	if PodiumMismatch(saved, saved) {
 		t.Fatal("identical should match")
 	}
+
+	// Place 4 participates in mismatch the same way as 1–3 (MP-87 + #21).
+	c, d := p(3), p(4)
+	saved4 := []PodiumPlace{
+		{Place: 1, PlayerIDs: []pgtype.UUID{a}},
+		{Place: 2, PlayerIDs: []pgtype.UUID{b}},
+		{Place: 3, PlayerIDs: []pgtype.UUID{c}},
+		{Place: 4, PlayerIDs: []pgtype.UUID{d}},
+	}
+	suggested4 := []PodiumPlace{
+		{Place: 1, PlayerIDs: []pgtype.UUID{a}},
+		{Place: 2, PlayerIDs: []pgtype.UUID{b}},
+		{Place: 3, PlayerIDs: []pgtype.UUID{d}},
+		{Place: 4, PlayerIDs: []pgtype.UUID{c}},
+	}
+	if !PodiumMismatch(saved4, suggested4) {
+		t.Fatal("expected mismatch when place 4 differs")
+	}
+	if PodiumMismatch(saved4, saved4) {
+		t.Fatal("identical 1–4 places should match")
+	}
 }
 
 func assertPodium(t *testing.T, got []PodiumPlace, want map[int][]pgtype.UUID) {
