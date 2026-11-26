@@ -73,3 +73,10 @@ SELECT m.*, u.email, u.first_name, u.last_name, u.status AS user_status
 FROM club_memberships m
 JOIN users u ON u.id = m.user_id
 WHERE m.id = $1 AND m.club_id = $2;
+
+-- name: CountActiveClubOwners :one
+SELECT COUNT(*)::int AS count
+FROM club_memberships
+WHERE club_id = $1
+  AND role = 'owner'
+  AND status = 'active';
