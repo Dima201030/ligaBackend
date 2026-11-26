@@ -131,6 +131,20 @@ RETURNING id, email, password_hash, first_name, last_name, role, status,
 -- name: DeleteUserByID :exec
 DELETE FROM users WHERE id = $1;
 
+-- name: AnonymizeUserAccount :one
+-- Right-to-erasure: strip identifiers, keep match FKs for tournament history.
+UPDATE users
+SET email = NULL,
+    password_hash = $2,
+    first_name = 'Удалённый',
+    last_name = 'профиль',
+    status = 'rejected',
+    email_verified_at = NULL,
+    updated_at = now()
+WHERE id = $1
+RETURNING id, email, password_hash, first_name, last_name, role, status,
+          email_verified_at, created_at, updated_at;
+
 -- name: ListPlaceholderPlayers :many
 SELECT
     u.id,

@@ -99,6 +99,21 @@ SET gender = COALESCE(sqlc.narg(gender), gender),
 WHERE user_id = sqlc.arg(user_id)
 RETURNING *;
 
+-- name: AnonymizeProfile :one
+UPDATE profiles
+SET phone = NULL,
+    gender = NULL,
+    city = '',
+    bio = '',
+    avatar_url = NULL,
+    avatar_file_id = NULL,
+    birth_date = NULL,
+    player_status = 'archived',
+    verification_note = COALESCE(verification_note, '') || ' account_erased',
+    updated_at = now()
+WHERE user_id = $1
+RETURNING *;
+
 -- name: ListPublicPlayers :many
 SELECT
     u.id,

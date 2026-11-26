@@ -26,12 +26,15 @@ const (
 )
 
 type registerRequest struct {
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-	Email     string `json:"email"`
-	Password  string `json:"password"`
-	Phone     string `json:"phone"`
-	Level     string `json:"level"`
+	FirstName           string `json:"first_name"`
+	LastName            string `json:"last_name"`
+	Email               string `json:"email"`
+	Password            string `json:"password"`
+	Phone               string `json:"phone"`
+	Level               string `json:"level"`
+	ConsentPDN          bool   `json:"consent_pdn"`
+	ConsentPublicProfile bool  `json:"consent_public_profile"`
+	ConsentMarketing    bool   `json:"consent_marketing"`
 }
 
 type loginRequest struct {
@@ -70,6 +73,14 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	if !auth.ValidLevel(level) {
 		writeError(w, http.StatusBadRequest, "validation", "Укажите уровень из списка взрослых категорий")
+		return
+	}
+	if !req.ConsentPDN {
+		writeError(w, http.StatusBadRequest, "consent_required", "Нужно согласие на обработку персональных данных")
+		return
+	}
+	if !req.ConsentPublicProfile {
+		writeError(w, http.StatusBadRequest, "consent_required", "Нужно согласие на публикацию профиля и результатов")
 		return
 	}
 
@@ -128,6 +139,20 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось создать аккаунт")
 		return
+	}
+	if err := s.recordConsent(r, q, user.ID, "pdn_processing", true); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось сохранить согласие")
+		return
+	}
+	if err := s.recordConsent(r, q, user.ID, "public_profile", true); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось сохранить согласие")
+		return
+	}
+	if req.ConsentMarketing {
+		if err := s.recordConsent(r, q, user.ID, "marketing", true); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось сохранить согласие")
+			return
+		}
 	}
 
 	rawToken, err := crypto.RandomBytes(32)

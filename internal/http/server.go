@@ -84,6 +84,8 @@ func NewWithOptions(opts Options) *Server {
 		r.With(s.requireAuth).Post("/sso/issue", s.handleSSOIssue)
 		r.Get("/sso/consume", s.handleSSOConsume)
 		r.With(s.requireAuth).Get("/me", s.handleMe)
+		r.With(s.requireAuth).Delete("/me", s.handleDeleteMe)
+		r.With(s.requireAuth).Get("/me/consents", s.handleListMyConsents)
 		r.With(s.requireAuth).Get("/me/clubs", s.handleMyClubs)
 		r.With(s.requireAuth, s.requireApproved).Get("/me/registrations", s.handleMyRegistrations)
 		r.With(s.requireAuth, s.requireApproved).Get("/me/matches", s.handleMyMatches)

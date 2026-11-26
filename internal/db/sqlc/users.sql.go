@@ -11,6 +11,44 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const anonymizeUserAccount = `-- name: AnonymizeUserAccount :one
+UPDATE users
+SET email = NULL,
+    password_hash = $2,
+    first_name = 'Удалённый',
+    last_name = 'профиль',
+    status = 'rejected',
+    email_verified_at = NULL,
+    updated_at = now()
+WHERE id = $1
+RETURNING id, email, password_hash, first_name, last_name, role, status,
+          email_verified_at, created_at, updated_at
+`
+
+type AnonymizeUserAccountParams struct {
+	ID           pgtype.UUID
+	PasswordHash string
+}
+
+// Right-to-erasure: strip identifiers, keep match FKs for tournament history.
+func (q *Queries) AnonymizeUserAccount(ctx context.Context, arg AnonymizeUserAccountParams) (User, error) {
+	row := q.db.QueryRow(ctx, anonymizeUserAccount, arg.ID, arg.PasswordHash)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.FirstName,
+		&i.LastName,
+		&i.Role,
+		&i.Status,
+		&i.EmailVerifiedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const approveUser = `-- name: ApproveUser :one
 UPDATE users
 SET first_name = $2,
