@@ -73,7 +73,20 @@ func main() {
 		if err != nil {
 			log.Fatalf("reset organizer: %v", err)
 		}
-		fmt.Printf("updated organizer: id=%s email=%s role=organizer status=approved\n",
+		// Club admin for the default tenant must be club owner (MP-104 owner-only members/settings).
+		clubID := clubs.DefaultUUID()
+		_, err = store.Pool.Exec(ctx, `
+			INSERT INTO club_memberships (club_id, user_id, role, status)
+			VALUES ($1, $2, 'owner', 'active')
+			ON CONFLICT (club_id, user_id) DO UPDATE
+			SET role = 'owner',
+			    status = 'active',
+			    updated_at = now()
+		`, clubID, existing.ID)
+		if err != nil {
+			log.Fatalf("reset club ownership: %v", err)
+		}
+		fmt.Printf("updated organizer: id=%s email=%s role=organizer status=approved club_role=owner\n",
 			uuidString(existing.ID), existing.Email.String)
 		return
 	}
@@ -105,10 +118,11 @@ func main() {
 	)); err != nil {
 		log.Fatalf("create profile: %v", err)
 	}
+	// Seeded club admin gets club owner so members/settings stay available after MP-104.
 	if _, err := q.CreateClubMembership(ctx, sqlc.CreateClubMembershipParams{
 		ClubID: clubID,
 		UserID: user.ID,
-		Role:   sqlc.ClubMemberRoleOrganizer,
+		Role:   sqlc.ClubMemberRoleOwner,
 		Status: sqlc.ClubMemberStatusActive,
 	}); err != nil {
 		log.Fatalf("create membership: %v", err)
@@ -117,7 +131,7 @@ func main() {
 		log.Fatalf("commit: %v", err)
 	}
 
-	fmt.Printf("seeded organizer: id=%s email=%s role=%s status=%s\n",
+	fmt.Printf("seeded organizer: id=%s email=%s role=%s status=%s club_role=owner\n",
 		uuidString(user.ID), user.Email.String, user.Role, user.Status)
 }
 
