@@ -57,7 +57,8 @@ func NewWithOptions(opts Options) *Server {
 		router:  chi.NewRouter(),
 		store:   opts.Store,
 		cfg:     opts.Cfg,
-		limiter: auth.NewRateLimiter(5, 15*time.Minute),
+		// 20 failures / 15m per IP+email. Login only records failures (see handleLogin).
+		limiter: auth.NewRateLimiter(20, 15*time.Minute),
 		files:   fileStore,
 	}
 	s.router.Use(middleware.RequestID)

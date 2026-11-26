@@ -22,14 +22,58 @@ func NewRateLimiter(maxHits int, window time.Duration) *RateLimiter {
 	}
 }
 
-// Allow returns false when the key has exceeded the limit.
-func (l *RateLimiter) Allow(key string) bool {
+// Allowed reports whether key is still under the limit without recording a hit.
+func (l *RateLimiter) Allowed(key string) bool {
 	now := time.Now()
 	cutoff := now.Add(-l.window)
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	kept := l.pruneLocked(key, cutoff)
+	l.attempts[key] = kept
+	return len(kept) < l.maxHits
+}
+
+// Record adds a hit for key. Returns false when the key is over the limit
+// after recording (caller may still choose to reject earlier via Allowed).
+func (l *RateLimiter) Record(key string) bool {
+	now := time.Now()
+	cutoff := now.Add(-l.window)
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	kept := l.pruneLocked(key, cutoff)
+	if len(kept) >= l.maxHits {
+		l.attempts[key] = kept
+		return false
+	}
+	l.attempts[key] = append(kept, now)
+	return true
+}
+
+// Allow records a hit and returns whether it was under the limit.
+// Prefer Allowed + Record for login so successful attempts do not burn budget.
+func (l *RateLimiter) Allow(key string) bool {
+	return l.Record(key)
+}
+
+// Reset clears recorded hits for key (e.g. after a successful login).
+func (l *RateLimiter) Reset(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.attempts, key)
+}
+
+// Clear wipes every key — ops escape hatch after a deploy/smoke lockout.
+func (l *RateLimiter) Clear() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.attempts = make(map[string][]time.Time)
+}
+
+func (l *RateLimiter) pruneLocked(key string, cutoff time.Time) []time.Time {
 	hits := l.attempts[key]
 	kept := hits[:0]
 	for _, t := range hits {
@@ -37,10 +81,5 @@ func (l *RateLimiter) Allow(key string) bool {
 			kept = append(kept, t)
 		}
 	}
-	if len(kept) >= l.maxHits {
-		l.attempts[key] = kept
-		return false
-	}
-	l.attempts[key] = append(kept, now)
-	return true
+	return kept
 }

@@ -20,3 +20,44 @@ func TestRateLimiter(t *testing.T) {
 		t.Fatal("other key should be allowed")
 	}
 }
+
+func TestRateLimiterAllowedRecordReset(t *testing.T) {
+	t.Parallel()
+	l := NewRateLimiter(2, time.Minute)
+
+	if !l.Allowed("login") {
+		t.Fatal("fresh key should be allowed")
+	}
+	if !l.Record("login") || !l.Record("login") {
+		t.Fatal("first two records should succeed")
+	}
+	if l.Allowed("login") {
+		t.Fatal("should be blocked after 2 hits")
+	}
+	if l.Record("login") {
+		t.Fatal("record while blocked should return false")
+	}
+
+	l.Reset("login")
+	if !l.Allowed("login") {
+		t.Fatal("reset should clear hits")
+	}
+	if !l.Record("login") {
+		t.Fatal("record after reset should succeed")
+	}
+}
+
+func TestRateLimiterClear(t *testing.T) {
+	t.Parallel()
+	l := NewRateLimiter(1, time.Minute)
+	if !l.Record("x") {
+		t.Fatal("first record ok")
+	}
+	if l.Allowed("x") {
+		t.Fatal("should be blocked")
+	}
+	l.Clear()
+	if !l.Allowed("x") {
+		t.Fatal("clear should wipe all keys")
+	}
+}
