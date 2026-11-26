@@ -324,6 +324,30 @@ func (q *Queries) GetMatchByTournamentKey(ctx context.Context, arg GetMatchByTou
 	return i, err
 }
 
+const getTournamentMatchesFingerprint = `-- name: GetTournamentMatchesFingerprint :one
+SELECT
+    COALESCE(COUNT(*)::bigint, 0)::bigint AS match_count,
+    COALESCE(SUM(version)::bigint, 0)::bigint AS version_sum,
+    COALESCE(MAX(updated_at), 'epoch'::timestamptz)::timestamptz AS max_updated_at
+FROM matches
+WHERE tournament_id = $1
+`
+
+type GetTournamentMatchesFingerprintRow struct {
+	MatchCount   int64
+	VersionSum   int64
+	MaxUpdatedAt pgtype.Timestamptz
+}
+
+// Cheap revision for live polling / SSE. Side advances bump a finished match version,
+// so clients refetch the full list when this fingerprint changes.
+func (q *Queries) GetTournamentMatchesFingerprint(ctx context.Context, tournamentID pgtype.UUID) (GetTournamentMatchesFingerprintRow, error) {
+	row := q.db.QueryRow(ctx, getTournamentMatchesFingerprint, tournamentID)
+	var i GetTournamentMatchesFingerprintRow
+	err := row.Scan(&i.MatchCount, &i.VersionSum, &i.MaxUpdatedAt)
+	return i, err
+}
+
 const listConfirmedRegistrationsForBracket = `-- name: ListConfirmedRegistrationsForBracket :many
 SELECT
     r.id,

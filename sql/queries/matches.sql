@@ -120,6 +120,16 @@ ORDER BY
     round_index ASC,
     position ASC;
 
+-- name: GetTournamentMatchesFingerprint :one
+-- Cheap revision for live polling / SSE. Side advances bump a finished match version,
+-- so clients refetch the full list when this fingerprint changes.
+SELECT
+    COALESCE(COUNT(*)::bigint, 0)::bigint AS match_count,
+    COALESCE(SUM(version)::bigint, 0)::bigint AS version_sum,
+    COALESCE(MAX(updated_at), 'epoch'::timestamptz)::timestamptz AS max_updated_at
+FROM matches
+WHERE tournament_id = $1;
+
 -- name: ListMatchSidesByTournament :many
 SELECT ms.*
 FROM match_sides ms

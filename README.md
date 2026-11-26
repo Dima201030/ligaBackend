@@ -64,10 +64,14 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | PATCH | `/api/organizer/tournaments/{id}` | Редактировать / сменить статус |
 | GET | `/api/tournaments/{slug}/bracket` | Публичная сетка (только published) |
 | GET | `/api/tournaments/{slug}/matches` | Публичные матчи турнира |
+| GET | `/api/tournaments/{slug}/matches/sync` | Live poll: `?revision=` → unchanged или список матчей |
+| GET | `/api/tournaments/{slug}/matches/events` | Live SSE (snapshot/update + heartbeat) |
 | GET | `/api/organizer/tournaments/{id}/bracket` | Сетка организатора (draft/published) |
 | POST | `/api/organizer/tournaments/{id}/bracket/generate` | Генерация из confirmed |
 | POST | `/api/organizer/tournaments/{id}/bracket/publish` | Публикация сетки |
 | GET | `/api/organizer/tournaments/{id}/matches` | Матчи турнира |
+| GET | `/api/organizer/tournaments/{id}/matches/sync` | Live poll матчей турнира (organizer+) |
+| GET | `/api/organizer/tournaments/{id}/matches/events` | Live SSE матчей турнира (organizer+) |
 | GET | `/api/organizer/matches` | Все матчи (кроме bye) |
 | PATCH | `/api/organizer/matches/{id}` | Расписание / корт / live |
 | POST | `/api/organizer/matches/{id}/score` | Счёт по сетам + advance |
