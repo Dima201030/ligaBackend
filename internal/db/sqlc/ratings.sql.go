@@ -445,6 +445,7 @@ JOIN users u ON u.id = r.player_id
 JOIN profiles p ON p.user_id = r.player_id AND p.club_id = r.club_id
 WHERE r.club_id = $1
   AND r.season = $2
+  AND p.player_status = 'active'
   AND r.calculated_at = (
       SELECT r2.calculated_at FROM rankings r2
       WHERE r2.club_id = $1 AND r2.season = $2

@@ -9,9 +9,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// ensureActivePlayerMembership creates or reactivates a player membership for the club.
+// ensureActivePlayerMembership creates or reactivates a player membership for the club
+// and restores an archived club profile so the player reappears in ranking.
 // Blocked members are left unchanged (guest-style registration still allowed by caller).
 func (s *Server) ensureActivePlayerMembership(ctx context.Context, clubID, userID pgtype.UUID) error {
+	activateProfile := func() {
+		_, _ = s.store.Queries.SetProfilePlayerStatus(ctx, sqlc.SetProfilePlayerStatusParams{
+			UserID:       userID,
+			PlayerStatus: "active",
+		})
+	}
 	row, err := s.store.Queries.GetClubMembership(ctx, sqlc.GetClubMembershipParams{
 		ClubID: clubID,
 		UserID: userID,
@@ -20,6 +27,7 @@ func (s *Server) ensureActivePlayerMembership(ctx context.Context, clubID, userI
 	case err == nil:
 		switch row.Status {
 		case sqlc.ClubMemberStatusActive:
+			activateProfile()
 			return nil
 		case sqlc.ClubMemberStatusBlocked:
 			return nil
@@ -34,7 +42,11 @@ func (s *Server) ensureActivePlayerMembership(ctx context.Context, clubID, userI
 				Role:   role,
 				Status: sqlc.ClubMemberStatusActive,
 			})
-			return updErr
+			if updErr != nil {
+				return updErr
+			}
+			activateProfile()
+			return nil
 		default:
 			return nil
 		}
@@ -45,7 +57,11 @@ func (s *Server) ensureActivePlayerMembership(ctx context.Context, clubID, userI
 			Role:   sqlc.ClubMemberRolePlayer,
 			Status: sqlc.ClubMemberStatusActive,
 		})
-		return createErr
+		if createErr != nil {
+			return createErr
+		}
+		activateProfile()
+		return nil
 	default:
 		return err
 	}

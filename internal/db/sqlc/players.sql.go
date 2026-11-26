@@ -796,6 +796,54 @@ func (q *Queries) MergeProfileFromSource(ctx context.Context, arg MergeProfileFr
 	return i, err
 }
 
+const setProfilePlayerStatus = `-- name: SetProfilePlayerStatus :one
+UPDATE profiles
+SET player_status = $2,
+    updated_at = now()
+WHERE user_id = $1
+RETURNING user_id, club_id, phone, level, slug, gender, city, bio, avatar_url, avatar_file_id, player_status, birth_date, verification_status, verified_at, verified_by, verification_note, rating, points, singles_points, doubles_points, matches_played, wins, losses, notification_prefs, created_at, updated_at
+`
+
+type SetProfilePlayerStatusParams struct {
+	UserID       pgtype.UUID
+	PlayerStatus string
+}
+
+// Club-scoped visibility for public players / live ranking (active|blocked|archived).
+func (q *Queries) SetProfilePlayerStatus(ctx context.Context, arg SetProfilePlayerStatusParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, setProfilePlayerStatus, arg.UserID, arg.PlayerStatus)
+	var i Profile
+	err := row.Scan(
+		&i.UserID,
+		&i.ClubID,
+		&i.Phone,
+		&i.Level,
+		&i.Slug,
+		&i.Gender,
+		&i.City,
+		&i.Bio,
+		&i.AvatarUrl,
+		&i.AvatarFileID,
+		&i.PlayerStatus,
+		&i.BirthDate,
+		&i.VerificationStatus,
+		&i.VerifiedAt,
+		&i.VerifiedBy,
+		&i.VerificationNote,
+		&i.Rating,
+		&i.Points,
+		&i.SinglesPoints,
+		&i.DoublesPoints,
+		&i.MatchesPlayed,
+		&i.Wins,
+		&i.Losses,
+		&i.NotificationPrefs,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateMyProfile = `-- name: UpdateMyProfile :one
 UPDATE profiles
 SET phone = $2,
