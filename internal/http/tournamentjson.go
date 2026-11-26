@@ -16,6 +16,13 @@ type venueJSON struct {
 	Surface string `json:"surface"`
 }
 
+type creatorJSON struct {
+	ID        string  `json:"id"`
+	FirstName string  `json:"first_name"`
+	LastName  string  `json:"last_name"`
+	Email     *string `json:"email,omitempty"`
+}
+
 type tournamentJSON struct {
 	ID                   string                `json:"id"`
 	ClubID               string                `json:"club_id,omitempty"`
@@ -49,6 +56,8 @@ type tournamentJSON struct {
 	Winners              []tournamentPlaceJSON `json:"winners,omitempty"`
 	SuggestedPlaces      []tournamentPlaceJSON `json:"suggested_places,omitempty"`
 	PlacesMismatch       bool                  `json:"places_mismatch,omitempty"`
+	CreatedByID          string                `json:"created_by_id,omitempty"`
+	CreatedBy            *creatorJSON          `json:"created_by,omitempty"`
 }
 
 type playerBriefJSON struct {
@@ -123,6 +132,9 @@ func tournamentFromRow(t sqlc.Tournament, regulations string) tournamentJSON {
 	if t.BracketPublishedAt.Valid {
 		s := t.BracketPublishedAt.Time.UTC().Format(time.RFC3339)
 		out.BracketPublishedAt = &s
+	}
+	if t.CreatedBy.Valid {
+		out.CreatedByID = uuidString(t.CreatedBy)
 	}
 	return out
 }

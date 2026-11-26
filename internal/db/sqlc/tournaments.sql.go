@@ -333,6 +333,24 @@ func (q *Queries) GetTournamentBySlug(ctx context.Context, arg GetTournamentBySl
 	return i, err
 }
 
+const getTournamentCreateActor = `-- name: GetTournamentCreateActor :one
+SELECT actor_id
+FROM audit_log
+WHERE action = 'tournament.create'
+  AND entity = 'tournament'
+  AND entity_id = $1
+  AND actor_id IS NOT NULL
+ORDER BY created_at ASC
+LIMIT 1
+`
+
+func (q *Queries) GetTournamentCreateActor(ctx context.Context, entityID pgtype.Text) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getTournamentCreateActor, entityID)
+	var actor_id pgtype.UUID
+	err := row.Scan(&actor_id)
+	return actor_id, err
+}
+
 const latestTournamentRuleVersion = `-- name: LatestTournamentRuleVersion :one
 SELECT id, tournament_id, version, rules, text_markdown, created_by, created_at FROM tournament_rule_versions
 WHERE tournament_id = $1
@@ -684,6 +702,24 @@ func (q *Queries) NextRuleVersion(ctx context.Context, tournamentID pgtype.UUID)
 	var next_version int32
 	err := row.Scan(&next_version)
 	return next_version, err
+}
+
+const setTournamentCreatedByIfNull = `-- name: SetTournamentCreatedByIfNull :exec
+UPDATE tournaments
+SET created_by = $2,
+    updated_at = now()
+WHERE id = $1
+  AND created_by IS NULL
+`
+
+type SetTournamentCreatedByIfNullParams struct {
+	ID        pgtype.UUID
+	CreatedBy pgtype.UUID
+}
+
+func (q *Queries) SetTournamentCreatedByIfNull(ctx context.Context, arg SetTournamentCreatedByIfNullParams) error {
+	_, err := q.db.Exec(ctx, setTournamentCreatedByIfNull, arg.ID, arg.CreatedBy)
+	return err
 }
 
 const slugExists = `-- name: SlugExists :one

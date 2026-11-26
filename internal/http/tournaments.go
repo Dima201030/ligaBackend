@@ -89,6 +89,7 @@ func (s *Server) handleListPublicTournaments(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турниры")
 		return
 	}
+	s.ensureTournamentsCreatedBy(r.Context(), rows)
 
 	hidden, _ := s.hiddenTournamentIDs(r.Context())
 	places, _ := s.allTournamentPlaces(r.Context(), s.currentClubID(r))
@@ -107,6 +108,7 @@ func (s *Server) handleListPublicTournaments(w http.ResponseWriter, r *http.Requ
 		tj.Venue = publicVenue(tj.Venue)
 		out = append(out, tj)
 	}
+	s.attachTournamentCreators(r.Context(), out)
 	writeJSON(w, http.StatusOK, map[string]any{"tournaments": out})
 }
 
@@ -122,6 +124,7 @@ func (s *Server) writePlatformPublicTournaments(
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турниры")
 		return
 	}
+	s.ensureCreatedByOnPlatformRows(r.Context(), rows)
 	hidden, _ := s.hiddenTournamentIDsAll(r.Context())
 	out := make([]tournamentJSON, 0, len(rows))
 	for _, row := range rows {
@@ -137,6 +140,7 @@ func (s *Server) writePlatformPublicTournaments(
 		tj.Venue = publicVenue(tj.Venue)
 		out = append(out, tj)
 	}
+	s.attachTournamentCreators(r.Context(), out)
 	writeJSON(w, http.StatusOK, map[string]any{"tournaments": out, "scope": "platform"})
 }
 
@@ -239,6 +243,7 @@ func (s *Server) handleGetPublicTournament(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
+	s.ensureTournamentCreatedBy(r.Context(), &tour)
 	regsText, _ := s.latestRegulations(r, tour.ID)
 	regs, err := s.store.Queries.ListRegistrationsByTournament(r.Context(), tour.ID)
 	if err != nil {
@@ -250,7 +255,7 @@ func (s *Server) handleGetPublicTournament(w http.ResponseWriter, r *http.Reques
 		list = append(list, registrationFromListRow(row))
 	}
 	clubSlug, clubName := s.currentClubMeta(r)
-	tj := withClubMeta(tournamentFromRow(tour, regsText), clubSlug, clubName)
+	tj := s.withTournamentCreator(r.Context(), withClubMeta(tournamentFromRow(tour, regsText), clubSlug, clubName))
 	tj.Venue = publicVenue(tj.Venue)
 	tj.Winners, _ = s.listTournamentPlaces(r.Context(), s.currentClubID(r), tour.ID)
 	images, err := s.listTournamentImages(r, tour.ID)
@@ -270,6 +275,7 @@ func (s *Server) handleListOrganizerTournaments(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турниры")
 		return
 	}
+	s.ensureTournamentsCreatedBy(r.Context(), rows)
 	hidden, _ := s.hiddenTournamentIDs(r.Context())
 	places, _ := s.allTournamentPlaces(r.Context(), s.currentClubID(r))
 	out := make([]tournamentJSON, 0, len(rows))
@@ -283,6 +289,7 @@ func (s *Server) handleListOrganizerTournaments(w http.ResponseWriter, r *http.R
 		tj.WaitlistCount = &counts.waitlist
 		out = append(out, tj)
 	}
+	s.attachTournamentCreators(r.Context(), out)
 	writeJSON(w, http.StatusOK, map[string]any{"tournaments": out})
 }
 
@@ -301,6 +308,7 @@ func (s *Server) handleGetOrganizerTournament(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турнир")
 		return
 	}
+	s.ensureTournamentCreatedBy(r.Context(), &tour)
 	regsText, _ := s.latestRegulations(r, tour.ID)
 	regs, err := s.store.Queries.ListOrganizerRegistrationsByTournament(r.Context(), tour.ID)
 	if err != nil {
@@ -320,7 +328,7 @@ func (s *Server) handleGetOrganizerTournament(w http.ResponseWriter, r *http.Req
 			waitlist++
 		}
 	}
-	tj := tournamentFromRow(tour, regsText)
+	tj := s.withTournamentCreator(r.Context(), tournamentFromRow(tour, regsText))
 	tj.ConfirmedCount = &confirmed
 	tj.WaitlistCount = &waitlist
 	tj.Hidden, _ = s.isTournamentHidden(r.Context(), tour.ID)
@@ -686,7 +694,7 @@ func (s *Server) handleCreateTournament(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	resp := map[string]any{"tournament": tournamentFromRow(tour, parsed.regulations)}
+	resp := map[string]any{"tournament": s.withTournamentCreator(r.Context(), tournamentFromRow(tour, parsed.regulations))}
 	if tour.Status == sqlc.TournamentStatusCompleted {
 		resp["ratings_applied"] = awarded
 	}
@@ -828,8 +836,9 @@ func (s *Server) handleUpdateTournament(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	s.ensureTournamentCreatedBy(r.Context(), &tour)
 	regs, _ := s.latestRegulations(r, tour.ID)
-	resp := map[string]any{"tournament": tournamentFromRow(tour, regs)}
+	resp := map[string]any{"tournament": s.withTournamentCreator(r.Context(), tournamentFromRow(tour, regs))}
 	if before.Status != sqlc.TournamentStatusCompleted && tour.Status == sqlc.TournamentStatusCompleted {
 		resp["ratings_applied"] = awarded
 	}
