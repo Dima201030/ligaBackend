@@ -72,6 +72,31 @@ func TestParseTournamentWriteAcceptsSanePayload(t *testing.T) {
 	}
 }
 
+func TestParseTournamentWriteRejectsPriceAndSeats(t *testing.T) {
+	req := baseTournamentWrite()
+	fee := int32(tournamentEntryFeeMax + 1)
+	req.EntryFee = &fee
+	if _, msg := parseTournamentWrite(req, true); msg == "" || !strings.Contains(msg, "100000000") {
+		t.Fatalf("entry fee max: got %q", msg)
+	}
+
+	req = baseTournamentWrite()
+	seats := int32(tournamentMaxParticipants + 1)
+	req.MaxParticipants = &seats
+	if _, msg := parseTournamentWrite(req, true); msg == "" || !strings.Contains(msg, "500") {
+		t.Fatalf("max participants: got %q", msg)
+	}
+
+	req = baseTournamentWrite()
+	okSeats := int32(tournamentMaxParticipants)
+	okFee := int32(tournamentEntryFeeMax)
+	req.MaxParticipants = &okSeats
+	req.EntryFee = &okFee
+	if _, msg := parseTournamentWrite(req, true); msg != "" {
+		t.Fatalf("expected boundary ok, got %q", msg)
+	}
+}
+
 func TestValidateNewsBodyMax(t *testing.T) {
 	ok := []string{strings.Repeat("а", 100), strings.Repeat("б", 100)}
 	if err := validateNewsBody(ok); err != nil {

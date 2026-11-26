@@ -29,15 +29,17 @@ const (
 	defaultVenueAddress = ""
 	defaultVenueCourts  = 1
 
-	tournamentTitleMin       = 3
-	tournamentTitleMax       = 120
-	tournamentDescriptionMax = 2000
-	tournamentRegulationsMin = 20
-	tournamentRegulationsMax = 10000
-	tournamentVenueNameMax   = 120
-	tournamentVenueAddrMax   = 240
-	tournamentStartMaxAhead  = 6 // months
+	tournamentTitleMin        = 3
+	tournamentTitleMax        = 120
+	tournamentDescriptionMax  = 2000
+	tournamentRegulationsMin  = 20
+	tournamentRegulationsMax  = 10000
+	tournamentVenueNameMax    = 120
+	tournamentVenueAddrMax    = 240
+	tournamentStartMaxAhead   = 6 // months
 	tournamentMaxDurationDays = 60
+	tournamentMaxParticipants = 500
+	tournamentEntryFeeMax     = 100_000_000 // RUB
 )
 
 type tournamentWriteRequest struct {
@@ -1159,8 +1161,8 @@ func parseTournamentWrite(req tournamentWriteRequest, creating bool) (parsedTour
 	if req.MaxParticipants != nil {
 		maxParticipants = *req.MaxParticipants
 	}
-	if maxParticipants < 2 || maxParticipants > 256 {
-		return parsedTournament{}, "Вместимость должна быть от 2 до 256"
+	if maxParticipants < 2 || maxParticipants > tournamentMaxParticipants {
+		return parsedTournament{}, "Вместимость должна быть от 2 до 500"
 	}
 	entryFee := int32(0)
 	if req.EntryFee != nil {
@@ -1168,6 +1170,9 @@ func parseTournamentWrite(req tournamentWriteRequest, creating bool) (parsedTour
 	}
 	if entryFee < 0 {
 		return parsedTournament{}, "Взнос не может быть отрицательным"
+	}
+	if entryFee > tournamentEntryFeeMax {
+		return parsedTournament{}, "Взнос слишком большой — максимум 100000000 ₽"
 	}
 
 	venueName := strings.TrimSpace(req.VenueName)

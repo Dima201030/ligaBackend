@@ -57,16 +57,17 @@ type pageJSON struct {
 }
 
 const (
-	contentTitleMin       = 3
-	contentTitleMax       = 120
-	newsExcerptMax        = 500
-	newsBodyTotalMax      = 20000
-	eventDescriptionMax   = 4000
-	eventLocationMax      = 200
-	pageTitleMin          = 2
-	pageTitleMax          = 120
-	pageBodyMarkdownMax   = 50000
-	contentStartMaxAhead  = 6 // months
+	contentTitleMin      = 3
+	contentTitleMax      = 120
+	newsExcerptMax       = 500
+	newsBodyTotalMax     = 20000
+	eventDescriptionMax  = 4000
+	eventLocationMax     = 200
+	pageTitleMin         = 2
+	pageTitleMax         = 120
+	pageBodyMarkdownMax  = 50000
+	contentStartMaxAhead = 6 // months
+	eventSeatsMax        = 500
 )
 
 type newsWriteRequest struct {
@@ -584,6 +585,10 @@ func (s *Server) buildEventCreate(r *http.Request, actor *auth.SessionUser, req 
 			return sqlc.CreateClubEventParams{
 		ClubID: s.currentClubID(r),}, errors.New("seats_left не может быть отрицательным")
 		}
+		if *req.SeatsLeft > eventSeatsMax {
+			return sqlc.CreateClubEventParams{
+		ClubID: s.currentClubID(r),}, errors.New("Число мест слишком большое — максимум 500")
+		}
 		seats = pgtype.Int4{Int32: *req.SeatsLeft, Valid: true}
 	}
 	return sqlc.CreateClubEventParams{
@@ -661,6 +666,9 @@ func buildEventUpdate(existing sqlc.ClubEvent, req eventWriteRequest) (sqlc.Upda
 	if req.SeatsLeft != nil {
 		if *req.SeatsLeft < 0 {
 			return sqlc.UpdateClubEventParams{}, errors.New("seats_left не может быть отрицательным")
+		}
+		if *req.SeatsLeft > eventSeatsMax {
+			return sqlc.UpdateClubEventParams{}, errors.New("Число мест слишком большое — максимум 500")
 		}
 		seats = pgtype.Int4{Int32: *req.SeatsLeft, Valid: true}
 	}
