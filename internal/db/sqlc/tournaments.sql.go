@@ -424,6 +424,103 @@ func (q *Queries) ListOrganizerTournaments(ctx context.Context, clubID pgtype.UU
 	return items, nil
 }
 
+const listPlatformPublicTournaments = `-- name: ListPlatformPublicTournaments :many
+SELECT t.id, t.club_id, t.slug, t.title, t.description, t.type, t.category, t.surface, t.format, t.status, t.starts_at, t.ends_at, t.registration_opens_at, t.registration_closes_at, t.venue_name, t.venue_address, t.venue_courts, t.venue_surface, t.entry_fee, t.max_participants, t.cover_url, t.cover_file_id, t.season, t.created_by, t.bracket_status, t.bracket_published_at, t.bracket_version, t.bracket_third_place, t.created_at, t.updated_at, c.slug AS club_slug, c.name AS club_name
+FROM tournaments t
+JOIN clubs c ON c.id = t.club_id
+WHERE t.status <> 'draft'
+  AND c.status = 'active'
+ORDER BY t.starts_at ASC
+`
+
+type ListPlatformPublicTournamentsRow struct {
+	ID                   pgtype.UUID
+	ClubID               pgtype.UUID
+	Slug                 string
+	Title                string
+	Description          string
+	Type                 TournamentType
+	Category             string
+	Surface              SurfaceType
+	Format               TournamentFormat
+	Status               TournamentStatus
+	StartsAt             pgtype.Timestamptz
+	EndsAt               pgtype.Timestamptz
+	RegistrationOpensAt  pgtype.Timestamptz
+	RegistrationClosesAt pgtype.Timestamptz
+	VenueName            string
+	VenueAddress         string
+	VenueCourts          int32
+	VenueSurface         SurfaceType
+	EntryFee             int32
+	MaxParticipants      int32
+	CoverUrl             pgtype.Text
+	CoverFileID          pgtype.UUID
+	Season               int32
+	CreatedBy            pgtype.UUID
+	BracketStatus        BracketStatus
+	BracketPublishedAt   pgtype.Timestamptz
+	BracketVersion       int32
+	BracketThirdPlace    bool
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+	ClubSlug             string
+	ClubName             string
+}
+
+func (q *Queries) ListPlatformPublicTournaments(ctx context.Context) ([]ListPlatformPublicTournamentsRow, error) {
+	rows, err := q.db.Query(ctx, listPlatformPublicTournaments)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPlatformPublicTournamentsRow{}
+	for rows.Next() {
+		var i ListPlatformPublicTournamentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ClubID,
+			&i.Slug,
+			&i.Title,
+			&i.Description,
+			&i.Type,
+			&i.Category,
+			&i.Surface,
+			&i.Format,
+			&i.Status,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.RegistrationOpensAt,
+			&i.RegistrationClosesAt,
+			&i.VenueName,
+			&i.VenueAddress,
+			&i.VenueCourts,
+			&i.VenueSurface,
+			&i.EntryFee,
+			&i.MaxParticipants,
+			&i.CoverUrl,
+			&i.CoverFileID,
+			&i.Season,
+			&i.CreatedBy,
+			&i.BracketStatus,
+			&i.BracketPublishedAt,
+			&i.BracketVersion,
+			&i.BracketThirdPlace,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ClubSlug,
+			&i.ClubName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPublicTournaments = `-- name: ListPublicTournaments :many
 SELECT id, club_id, slug, title, description, type, category, surface, format, status, starts_at, ends_at, registration_opens_at, registration_closes_at, venue_name, venue_address, venue_courts, venue_surface, entry_fee, max_participants, cover_url, cover_file_id, season, created_by, bracket_status, bracket_published_at, bracket_version, bracket_third_place, created_at, updated_at FROM tournaments
 WHERE club_id = $1

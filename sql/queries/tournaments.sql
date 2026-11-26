@@ -76,6 +76,14 @@ WHERE club_id = $1
   AND status <> 'draft'
 ORDER BY starts_at ASC;
 
+-- name: ListPlatformPublicTournaments :many
+SELECT t.*, c.slug AS club_slug, c.name AS club_name
+FROM tournaments t
+JOIN clubs c ON c.id = t.club_id
+WHERE t.status <> 'draft'
+  AND c.status = 'active'
+ORDER BY t.starts_at ASC;
+
 -- name: ListOrganizerTournaments :many
 SELECT * FROM tournaments
 WHERE club_id = $1
