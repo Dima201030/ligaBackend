@@ -101,6 +101,50 @@ ORDER BY
     END,
     starts_at ASC;
 
+-- name: ListOrganizerTournamentsPlatform :many
+-- Platform tournament organizers / global owners: all clubs, no current-club gate.
+SELECT t.*, c.slug AS club_slug, c.name AS club_name
+FROM tournaments t
+JOIN clubs c ON c.id = t.club_id
+WHERE c.status = 'active'
+ORDER BY
+    CASE t.status
+        WHEN 'live' THEN 0
+        WHEN 'registration_open' THEN 1
+        WHEN 'registration_soon' THEN 2
+        WHEN 'registration_closed' THEN 3
+        WHEN 'scheduled' THEN 4
+        WHEN 'draft' THEN 5
+        WHEN 'completed' THEN 6
+        WHEN 'cancelled' THEN 7
+        ELSE 8
+    END,
+    t.starts_at ASC;
+
+-- name: ListOrganizerTournamentsForMember :many
+-- Club owners/organizers: tournaments in clubs where they have active membership.
+SELECT t.*, c.slug AS club_slug, c.name AS club_name
+FROM tournaments t
+JOIN clubs c ON c.id = t.club_id
+JOIN club_memberships m ON m.club_id = t.club_id
+WHERE m.user_id = $1
+  AND m.status = 'active'
+  AND m.role IN ('owner', 'organizer')
+  AND c.status = 'active'
+ORDER BY
+    CASE t.status
+        WHEN 'live' THEN 0
+        WHEN 'registration_open' THEN 1
+        WHEN 'registration_soon' THEN 2
+        WHEN 'registration_closed' THEN 3
+        WHEN 'scheduled' THEN 4
+        WHEN 'draft' THEN 5
+        WHEN 'completed' THEN 6
+        WHEN 'cancelled' THEN 7
+        ELSE 8
+    END,
+    t.starts_at ASC;
+
 -- name: SlugExists :one
 SELECT EXISTS(
     SELECT 1 FROM tournaments WHERE club_id = $1 AND slug = $2

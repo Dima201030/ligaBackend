@@ -66,6 +66,9 @@ type tournamentWriteRequest struct {
 	CoverURL             *string `json:"cover_url"`
 	Regulations          string  `json:"regulations"`
 	Season               *int32  `json:"season"`
+	// Club on the tournament card (preferred over global current-club header).
+	ClubID   *string `json:"club_id"`
+	ClubSlug *string `json:"club_slug"`
 }
 
 type createRegistrationRequest struct {
@@ -193,6 +196,86 @@ func platformRowToTournament(row sqlc.ListPlatformPublicTournamentsRow) sqlc.Tou
 	}
 }
 
+func organizerPlatformRowToTournament(row sqlc.ListOrganizerTournamentsPlatformRow) sqlc.Tournament {
+	return sqlc.Tournament{
+		ID: row.ID, ClubID: row.ClubID, Slug: row.Slug, Title: row.Title, Description: row.Description,
+		Type: row.Type, Category: row.Category, Surface: row.Surface, Format: row.Format, Status: row.Status,
+		StartsAt: row.StartsAt, EndsAt: row.EndsAt, RegistrationOpensAt: row.RegistrationOpensAt,
+		RegistrationClosesAt: row.RegistrationClosesAt, VenueName: row.VenueName, VenueAddress: row.VenueAddress,
+		VenueCourts: row.VenueCourts, VenueSurface: row.VenueSurface, EntryFee: row.EntryFee,
+		MaxParticipants: row.MaxParticipants, CoverUrl: row.CoverUrl, CoverFileID: row.CoverFileID,
+		Season: row.Season, CreatedBy: row.CreatedBy, BracketStatus: row.BracketStatus,
+		BracketPublishedAt: row.BracketPublishedAt, BracketVersion: row.BracketVersion,
+		BracketThirdPlace: row.BracketThirdPlace, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+	}
+}
+
+func organizerMemberRowToTournament(row sqlc.ListOrganizerTournamentsForMemberRow) sqlc.Tournament {
+	return sqlc.Tournament{
+		ID: row.ID, ClubID: row.ClubID, Slug: row.Slug, Title: row.Title, Description: row.Description,
+		Type: row.Type, Category: row.Category, Surface: row.Surface, Format: row.Format, Status: row.Status,
+		StartsAt: row.StartsAt, EndsAt: row.EndsAt, RegistrationOpensAt: row.RegistrationOpensAt,
+		RegistrationClosesAt: row.RegistrationClosesAt, VenueName: row.VenueName, VenueAddress: row.VenueAddress,
+		VenueCourts: row.VenueCourts, VenueSurface: row.VenueSurface, EntryFee: row.EntryFee,
+		MaxParticipants: row.MaxParticipants, CoverUrl: row.CoverUrl, CoverFileID: row.CoverFileID,
+		Season: row.Season, CreatedBy: row.CreatedBy, BracketStatus: row.BracketStatus,
+		BracketPublishedAt: row.BracketPublishedAt, BracketVersion: row.BracketVersion,
+		BracketThirdPlace: row.BracketThirdPlace, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+	}
+}
+
+// resolvePublishClub picks the club for tournament create from body club_id/club_slug,
+// falling back to the request tenant header. No global "current club" UI required.
+func (s *Server) resolvePublishClub(r *http.Request, clubID *string, clubSlug *string) (sqlc.Club, error) {
+	ctx := r.Context()
+	if clubID != nil {
+		if id, err := parseUUID(strings.TrimSpace(*clubID)); err == nil {
+			row, err := s.store.Queries.GetClubByID(ctx, id)
+			if err == nil {
+				if row.Status != sqlc.ClubStatusActive {
+					return sqlc.Club{}, errClubInactive
+				}
+				return row, nil
+			}
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return sqlc.Club{}, err
+			}
+			return sqlc.Club{}, errClubNotFound
+		}
+	}
+	if clubSlug != nil {
+		slug := clubs.NormalizeSlug(strings.TrimSpace(*clubSlug))
+		if slug != "" {
+			row, err := s.store.Queries.GetActiveClubBySlug(ctx, slug)
+			if err == nil {
+				return row, nil
+			}
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return sqlc.Club{}, err
+			}
+			return sqlc.Club{}, errClubNotFound
+		}
+	}
+	// Backward compat: header / default tenant.
+	cur := s.currentClubID(r)
+	row, err := s.store.Queries.GetClubByID(ctx, cur)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return sqlc.Club{}, errClubNotFound
+		}
+		return sqlc.Club{}, err
+	}
+	if row.Status != sqlc.ClubStatusActive {
+		return sqlc.Club{}, errClubInactive
+	}
+	return row, nil
+}
+
+var (
+	errClubNotFound = errors.New("club not found")
+	errClubInactive = errors.New("club inactive")
+)
+
 func (s *Server) currentClubMeta(r *http.Request) (slug, name string) {
 	if c := clubs.FromContext(r.Context()); c != nil {
 		return c.Slug, c.Name
@@ -284,21 +367,57 @@ func (s *Server) handleGetPublicTournament(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleListOrganizerTournaments(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.store.Queries.ListOrganizerTournaments(r.Context(), s.currentClubID(r))
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турниры")
+	actor := auth.UserFromContext(r.Context())
+	if actor == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
 		return
 	}
-	s.ensureTournamentsCreatedBy(r.Context(), rows)
-	hidden, _ := s.hiddenTournamentIDs(r.Context())
-	places, _ := s.allTournamentPlaces(r.Context(), s.currentClubID(r))
-	out := make([]tournamentJSON, 0, len(rows))
-	for _, row := range rows {
-		regs, _ := s.latestRegulations(r, row.ID)
-		tj := tournamentFromRow(row, regs)
-		tj.Hidden = hidden[uuidString(row.ID)]
-		tj.Winners = places[uuidString(row.ID)]
-		counts := s.registrationCounts(r, row.ID)
+
+	type listed struct {
+		tour     sqlc.Tournament
+		clubSlug string
+		clubName string
+	}
+	var listedRows []listed
+
+	if auth.IsOrganizerOrAbove(actor.Role) {
+		rows, err := s.store.Queries.ListOrganizerTournamentsPlatform(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турниры")
+			return
+		}
+		listedRows = make([]listed, 0, len(rows))
+		for _, row := range rows {
+			listedRows = append(listedRows, listed{
+				tour: organizerPlatformRowToTournament(row), clubSlug: row.ClubSlug, clubName: row.ClubName,
+			})
+		}
+	} else {
+		rows, err := s.store.Queries.ListOrganizerTournamentsForMember(r.Context(), actor.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить турниры")
+			return
+		}
+		listedRows = make([]listed, 0, len(rows))
+		for _, row := range rows {
+			listedRows = append(listedRows, listed{
+				tour: organizerMemberRowToTournament(row), clubSlug: row.ClubSlug, clubName: row.ClubName,
+			})
+		}
+	}
+
+	tours := make([]sqlc.Tournament, 0, len(listedRows))
+	for _, item := range listedRows {
+		tours = append(tours, item.tour)
+	}
+	s.ensureTournamentsCreatedBy(r.Context(), tours)
+	hidden, _ := s.hiddenTournamentIDsAll(r.Context())
+	out := make([]tournamentJSON, 0, len(listedRows))
+	for _, item := range listedRows {
+		regs, _ := s.latestRegulations(r, item.tour.ID)
+		tj := withClubMeta(tournamentFromRow(item.tour, regs), item.clubSlug, item.clubName)
+		tj.Hidden = hidden[uuidString(item.tour.ID)]
+		counts := s.registrationCounts(r, item.tour.ID)
 		tj.ConfirmedCount = &counts.confirmed
 		tj.WaitlistCount = &counts.waitlist
 		out = append(out, tj)
@@ -342,11 +461,15 @@ func (s *Server) handleGetOrganizerTournament(w http.ResponseWriter, r *http.Req
 			waitlist++
 		}
 	}
-	tj := s.withTournamentCreator(r.Context(), tournamentFromRow(tour, regsText))
+	clubSlug, clubName := "", ""
+	if clubRow, clubErr := s.store.Queries.GetClubByID(r.Context(), tour.ClubID); clubErr == nil {
+		clubSlug, clubName = clubRow.Slug, clubRow.Name
+	}
+	tj := s.withTournamentCreator(r.Context(), withClubMeta(tournamentFromRow(tour, regsText), clubSlug, clubName))
 	tj.ConfirmedCount = &confirmed
 	tj.WaitlistCount = &waitlist
 	tj.Hidden, _ = s.isTournamentHidden(r.Context(), tour.ID)
-	tj.Winners, _ = s.listTournamentPlaces(r.Context(), s.currentClubID(r), tour.ID)
+	tj.Winners, _ = s.listTournamentPlaces(r.Context(), tour.ClubID, tour.ID)
 	s.attachPlacesSuggestion(r.Context(), tour, &tj)
 	images, err := s.listTournamentImages(r, tour.ID)
 	if err != nil {
@@ -596,8 +719,34 @@ func (s *Server) handleCreateTournament(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	club, err := s.resolvePublishClub(r, req.ClubID, req.ClubSlug)
+	if err != nil {
+		switch {
+		case errors.Is(err, errClubNotFound):
+			writeError(w, http.StatusNotFound, "club_not_found", "Клуб не найден")
+		case errors.Is(err, errClubInactive):
+			writeError(w, http.StatusConflict, "club_inactive", "Клуб неактивен")
+		default:
+			writeError(w, http.StatusInternalServerError, "internal", "Не удалось определить клуб")
+		}
+		return
+	}
+	ok, pubErr := s.canPublishTournamentToClub(r, club.ID)
+	if pubErr != nil {
+		if errors.Is(pubErr, errUnauthorized) {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "Требуется вход")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось проверить права")
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusForbidden, "forbidden", "Нельзя публиковать турнир от имени этого клуба")
+		return
+	}
+
 	ctx := r.Context()
-	activeCount, err := s.store.Queries.CountActiveTournamentsByClub(ctx, s.currentClubID(r))
+	activeCount, err := s.store.Queries.CountActiveTournamentsByClub(ctx, club.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "Не удалось создать турнир")
 		return
@@ -614,7 +763,7 @@ func (s *Server) handleCreateTournament(w http.ResponseWriter, r *http.Request) 
 	}
 	base := slug
 	for i := 0; i < 20; i++ {
-		exists, err := s.store.Queries.SlugExists(ctx, sqlc.SlugExistsParams{ClubID: s.currentClubID(r), Slug: slug})
+		exists, err := s.store.Queries.SlugExists(ctx, sqlc.SlugExistsParams{ClubID: club.ID, Slug: slug})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "Не удалось создать турнир")
 			return
@@ -635,7 +784,7 @@ func (s *Server) handleCreateTournament(w http.ResponseWriter, r *http.Request) 
 
 	tour, err := q.CreateTournament(ctx, sqlc.CreateTournamentParams{
 
-		ClubID: s.currentClubID(r), Slug: slug,
+		ClubID: club.ID, Slug: slug,
 		Title:                parsed.title,
 		Description:          parsed.description,
 		Type:                 parsed.typ,
@@ -719,7 +868,8 @@ func (s *Server) handleCreateTournament(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	resp := map[string]any{"tournament": s.withTournamentCreator(r.Context(), tournamentFromRow(tour, parsed.regulations))}
+	tj := withClubMeta(tournamentFromRow(tour, parsed.regulations), club.Slug, club.Name)
+	resp := map[string]any{"tournament": s.withTournamentCreator(r.Context(), tj)}
 	if tour.Status == sqlc.TournamentStatusCompleted {
 		resp["ratings_applied"] = awarded
 	}
@@ -743,6 +893,16 @@ func (s *Server) handleUpdateTournament(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	before, err := s.loadClubTournament(r, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "Не удалось обновить турнир")
+		return
+	}
+
 	ctx := r.Context()
 	tx, err := s.store.Pool.Begin(ctx)
 	if err != nil {
@@ -752,10 +912,8 @@ func (s *Server) handleUpdateTournament(w http.ResponseWriter, r *http.Request) 
 	defer tx.Rollback(ctx)
 	q := s.store.Queries.WithTx(tx)
 
-	before, err := q.GetTournamentByClubAndID(ctx, sqlc.GetTournamentByClubAndIDParams{
-		ClubID: s.currentClubID(r),
-		ID:     id,
-	})
+	// Re-lock inside the transaction by id (club already authorized above).
+	before, err = q.GetTournamentByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "not_found", "Турнир не найден")
@@ -863,7 +1021,11 @@ func (s *Server) handleUpdateTournament(w http.ResponseWriter, r *http.Request) 
 
 	s.ensureTournamentCreatedBy(r.Context(), &tour)
 	regs, _ := s.latestRegulations(r, tour.ID)
-	resp := map[string]any{"tournament": s.withTournamentCreator(r.Context(), tournamentFromRow(tour, regs))}
+	clubSlug, clubName := "", ""
+	if clubRow, clubErr := s.store.Queries.GetClubByID(r.Context(), tour.ClubID); clubErr == nil {
+		clubSlug, clubName = clubRow.Slug, clubRow.Name
+	}
+	resp := map[string]any{"tournament": s.withTournamentCreator(r.Context(), withClubMeta(tournamentFromRow(tour, regs), clubSlug, clubName))}
 	if before.Status != sqlc.TournamentStatusCompleted && tour.Status == sqlc.TournamentStatusCompleted {
 		resp["ratings_applied"] = awarded
 	}
