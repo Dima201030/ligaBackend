@@ -118,6 +118,8 @@ func NewWithOptions(opts Options) *Server {
 		r.Use(s.requireAuth)
 		r.Use(s.requireOrganizer)
 		r.Post("/clubs", s.handleOnboardClub)
+		r.Get("/club", s.handleGetOrganizerClub)
+		r.Patch("/club", s.handlePatchOrganizerClub)
 		r.Get("/members", s.handleListClubMembers)
 		r.Post("/members", s.handleAddClubMember)
 		r.Patch("/members/{id}", s.handlePatchClubMember)

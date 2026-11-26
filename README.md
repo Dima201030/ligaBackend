@@ -48,6 +48,8 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | GET | `/api/clubs/{slug}` | Карточка клуба |
 | GET | `/api/auth/me/clubs` | Клубы текущего пользователя (memberships) |
 | POST | `/api/organizer/clubs` | Онбординг клуба: seed pages + rating_config + owner membership |
+| GET | `/api/organizer/club` | Текущий клуб (tenant) + безопасные `settings` |
+| PATCH | `/api/organizer/club` | Обновить `name` / `city` / безопасные `settings` |
 | GET | `/api/organizer/members` | Участники текущего клуба (`X-Club-Slug`) |
 | POST | `/api/organizer/members` | Добавить/обновить по email + role (`owner`/`organizer`/`player`) |
 | PATCH | `/api/organizer/members/{id}` | Сменить role/status участника |
