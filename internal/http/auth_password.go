@@ -266,8 +266,8 @@ func (s *Server) handleResendConfirm(w http.ResponseWriter, r *http.Request) {
 		"first_name": user.FirstName,
 		"token":      token,
 	}
-	if s.cfg.PublicBaseURL != "" {
-		payload["confirm_url"] = s.cfg.PublicBaseURL + "/api/auth/confirm-email?token=" + token
+	if url := s.cfg.EmailConfirmURL(token); url != "" {
+		payload["confirm_url"] = url
 	}
 	_ = mail.Enqueue(ctx, s.store, s.cfg, emailString(user.Email), "confirm_email", payload)
 

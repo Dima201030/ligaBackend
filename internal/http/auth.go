@@ -182,8 +182,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		"first_name": firstName,
 		"token":      confirmToken,
 	}
-	if s.cfg.PublicBaseURL != "" {
-		payload["confirm_url"] = s.cfg.PublicBaseURL + "/api/auth/confirm-email?token=" + confirmToken
+	if url := s.cfg.EmailConfirmURL(confirmToken); url != "" {
+		payload["confirm_url"] = url
 	}
 	_ = mail.Enqueue(ctx, s.store, s.cfg, email, "confirm_email", payload)
 	_ = mail.Enqueue(ctx, s.store, s.cfg, email, "registration_received", map[string]any{
@@ -299,6 +299,11 @@ func (s *Server) handleConfirmEmail(w http.ResponseWriter, r *http.Request) {
 	token := ""
 	if r.Method == http.MethodGet {
 		token = strings.TrimSpace(r.URL.Query().Get("token"))
+		// Old mail links hit the API; send browsers to the UI confirm page when configured.
+		if token != "" && s.cfg.FrontBaseURL != "" && prefersHTML(r) {
+			http.Redirect(w, r, s.cfg.FrontBaseURL+"/confirm-email?token="+token, http.StatusFound)
+			return
+		}
 	} else {
 		var req confirmEmailRequest
 		if err := decodeJSON(r, &req); err != nil {

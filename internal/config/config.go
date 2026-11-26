@@ -17,6 +17,7 @@ type Config struct {
 	CookieSecure             bool
 	RequireEmailVerification bool
 	PublicBaseURL            string
+	FrontBaseURL             string
 	SMTPHost                 string
 	SMTPPort                 int
 	SMTPUser                 string
@@ -35,6 +36,7 @@ func Load() (Config, error) {
 		AppEnv:                   strings.ToLower(envOr("APP_ENV", "development")),
 		RequireEmailVerification: envBool("REQUIRE_EMAIL_VERIFICATION", false),
 		PublicBaseURL:            strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")), "/"),
+		FrontBaseURL:             strings.TrimRight(strings.TrimSpace(os.Getenv("FRONT_BASE_URL")), "/"),
 		SMTPHost:                 strings.TrimSpace(os.Getenv("SMTP_HOST")),
 		SMTPUser:                 strings.TrimSpace(os.Getenv("SMTP_USER")),
 		SMTPPassword:             os.Getenv("SMTP_PASSWORD"),
@@ -100,6 +102,22 @@ func (c Config) SessionCookieName() string {
 // HasSMTP reports whether outbound SMTP is configured.
 func (c Config) HasSMTP() bool {
 	return c.SMTPHost != "" && c.SMTPFrom != ""
+}
+
+// EmailConfirmURL builds the link placed in confirm_email outbox payloads.
+// Prefer the Next.js page when FRONT_BASE_URL is set; otherwise fall back to the API route.
+func (c Config) EmailConfirmURL(token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ""
+	}
+	if c.FrontBaseURL != "" {
+		return c.FrontBaseURL + "/confirm-email?token=" + token
+	}
+	if c.PublicBaseURL != "" {
+		return c.PublicBaseURL + "/api/auth/confirm-email?token=" + token
+	}
+	return ""
 }
 
 func envOr(key, fallback string) string {

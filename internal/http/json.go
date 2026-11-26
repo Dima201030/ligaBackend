@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 )
 
 type errorBody struct {
@@ -24,4 +25,19 @@ func decodeJSON(r *http.Request, dst any) error {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	return dec.Decode(dst)
+}
+
+// prefersHTML reports whether the client likely wants an HTML page (browser link click).
+func prefersHTML(r *http.Request) bool {
+	accept := strings.ToLower(r.Header.Get("Accept"))
+	if accept == "" {
+		return true
+	}
+	if strings.Contains(accept, "text/html") {
+		return true
+	}
+	if strings.Contains(accept, "application/json") {
+		return false
+	}
+	return !strings.Contains(accept, "application/")
 }
