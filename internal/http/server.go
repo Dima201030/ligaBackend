@@ -186,6 +186,7 @@ func NewWithOptions(opts Options) *Server {
 			admin.Put("/pages/{slug}", s.handleUpsertPage)
 			admin.Post("/news/{id}/cover", s.handleAttachNewsCover)
 			admin.Post("/events/{id}/cover", s.handleAttachEventCover)
+			admin.Get("/analytics/summary", s.handleOrganizerAnalyticsSummary)
 		})
 	})
 
