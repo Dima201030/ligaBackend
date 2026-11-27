@@ -34,7 +34,7 @@ Compose поднимает `db` → `migrate` (goose up) → `api`.
 | POST | `/api/auth/login` | Вход (только `approved`; cookie-сессия) |
 | POST | `/api/auth/logout` | Отзыв сессии |
 | GET | `/api/auth/me` | Текущий пользователь (+ `notifications`, `club_role`, `organizer_access`) |
-| PATCH | `/api/auth/me` | Обновить имя, телефон, город, bio, категорию |
+| PATCH | `/api/auth/me` | Запрещён (`403 profile_readonly`): саморедактирование профиля недоступно |
 | GET | `/api/auth/me/notifications` | Настройки уведомлений |
 | PATCH | `/api/auth/me/notifications` | Частичное обновление уведомлений |
 | GET/POST | `/api/auth/confirm-email` | Подтверждение email по токену |
